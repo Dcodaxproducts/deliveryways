@@ -5,6 +5,8 @@ import {
   OrderStatus,
   PaymentStatus,
   PaymentTransactionType,
+  PackageBillingModel,
+  PackageCommissionType,
   Prisma,
   RestaurantWalletTransactionType,
   SubscriptionDeductionStatus,
@@ -13,6 +15,10 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
+import {
+  allocateMonthlyCommission,
+  allocateMonthlyFee,
+} from './payout-accounting';
 import {
   ListPackagePlansDto,
   ListSubscriptionDeductionsDto,
@@ -823,6 +829,209 @@ export class PackagePlansRepository {
           in: [SubscriptionStatus.TRIALING, SubscriptionStatus.ACTIVE],
         },
       },
+    });
+  }
+
+  async allocateMonthlyPayout(input: {
+    restaurantId: string;
+    subscriptionId: string;
+    localMonth: string;
+    timezone: string;
+    currency: string;
+    sourceKey: string;
+    grossCommissionableAmount: Prisma.Decimal;
+    commissionableOrderCount: number;
+    availablePayoutAmount: Prisma.Decimal;
+    packagePlanId: string;
+    billingModel: PackageBillingModel;
+    commissionType: PackageCommissionType;
+    commissionCapAmount: Prisma.Decimal | null;
+    commissionPercentage: Prisma.Decimal;
+    commissionFixedAmount: Prisma.Decimal;
+    vatPercentage: Prisma.Decimal;
+    monthlyFeeAmount: Prisma.Decimal;
+    snapshotHash: string;
+    isSpecialPayout?: boolean;
+  }) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const existing = await tx.restaurantPayoutAllocation.findUnique({
+              where: { sourceKey: input.sourceKey },
+            });
+            if (existing) return existing;
+            const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
+              where: {
+                restaurantId_subscriptionId_localMonth: {
+                  restaurantId: input.restaurantId,
+                  subscriptionId: input.subscriptionId,
+                  localMonth: input.localMonth,
+                },
+              },
+              create: {
+                restaurantId: input.restaurantId,
+                subscriptionId: input.subscriptionId,
+                localMonth: input.localMonth,
+                timezone: input.timezone,
+                currency: input.currency,
+                packagePlanId: input.packagePlanId,
+                billingModel: input.billingModel,
+                commissionType: input.commissionType,
+                commissionPercentage: input.commissionPercentage,
+                commissionFixedAmount: input.commissionFixedAmount,
+                commissionCapAmount: input.commissionCapAmount,
+                vatPercentage: input.vatPercentage,
+                monthlyFeeAmount: input.monthlyFeeAmount,
+                monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
+              },
+              update: {},
+            });
+            if (ledger.finalizedAt)
+              throw new WalletSettlementConflictError(
+                'Payout month is finalized and immutable',
+              );
+            const sequence =
+              (await tx.restaurantPayoutAllocation.count({
+                where: { ledgerId: ledger.id },
+              })) + 1;
+            const commissionAmount = input.isSpecialPayout
+              ? new Prisma.Decimal(0)
+              : allocateMonthlyCommission({
+                  grossAmount: input.grossCommissionableAmount,
+                  allocatedBefore: ledger.commissionAllocatedAmount,
+                  commissionType: ledger.commissionType,
+                  capAmount: ledger.commissionCapAmount,
+                  percentage: ledger.commissionPercentage,
+                  fixedAmount: ledger.commissionFixedAmount,
+                  commissionUnits: input.commissionableOrderCount,
+                });
+            const monthlyFeeAmount = input.isSpecialPayout
+              ? new Prisma.Decimal(0)
+              : allocateMonthlyFee({
+                  payoutSequence: sequence,
+                  allocatedBefore: ledger.monthlyFeeAllocatedAmount,
+                  availableAfterOtherDeductions: Prisma.Decimal.max(
+                    input.availablePayoutAmount.minus(commissionAmount),
+                    0,
+                  ),
+                  monthlyFee: ledger.monthlyFeeAmount,
+                });
+            const allocation = await tx.restaurantPayoutAllocation.create({
+              data: {
+                ledgerId: ledger.id,
+                sourceKey: input.sourceKey,
+                sequence,
+                commissionAmount,
+                monthlyFeeAmount,
+                availablePayoutAmount: input.availablePayoutAmount,
+                isSpecialPayout: input.isSpecialPayout ?? false,
+                snapshotHash: input.snapshotHash,
+              },
+            });
+            const monthlyFeeAllocatedAmount =
+              ledger.monthlyFeeAllocatedAmount.plus(monthlyFeeAmount);
+            await tx.restaurantPayoutMonthlyLedger.update({
+              where: { id: ledger.id },
+              data: {
+                commissionAllocatedAmount:
+                  ledger.commissionAllocatedAmount.plus(commissionAmount),
+                monthlyFeeAllocatedAmount,
+                monthlyFeeOutstandingAmount: Prisma.Decimal.max(
+                  ledger.monthlyFeeAmount.minus(monthlyFeeAllocatedAmount),
+                  0,
+                ),
+              },
+            });
+            return allocation;
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (attempt < 2 && this.isPrismaError(error, 'P2034')) continue;
+        throw error;
+      }
+    }
+    throw new WalletSettlementConflictError(
+      'Payout allocation changed during finalization',
+    );
+  }
+
+  finalizePayoutMonth(input: {
+    restaurantId: string;
+    subscriptionId: string;
+    localMonth: string;
+    finalizedAt: Date;
+  }) {
+    return this.prisma.restaurantPayoutMonthlyLedger.updateMany({
+      where: {
+        restaurantId: input.restaurantId,
+        subscriptionId: input.subscriptionId,
+        localMonth: input.localMonth,
+        finalizedAt: null,
+      },
+      data: { finalizedAt: input.finalizedAt },
+    });
+  }
+
+  async acquireRestaurantPayoutSchedule(input: {
+    restaurantId: string;
+    lockToken: string;
+    now: Date;
+    lockExpiresAt: Date;
+  }) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.restaurantPayoutSchedule.upsert({
+          where: { restaurantId: input.restaurantId },
+          create: { restaurantId: input.restaurantId },
+          update: {},
+        });
+        const claimed = await tx.restaurantPayoutSchedule.updateMany({
+          where: {
+            restaurantId: input.restaurantId,
+            OR: [
+              { lockToken: null },
+              { lockExpiresAt: null },
+              { lockExpiresAt: { lte: input.now } },
+            ],
+          },
+          data: {
+            lockToken: input.lockToken,
+            lockExpiresAt: input.lockExpiresAt,
+          },
+        });
+        if (claimed.count === 0) return null;
+        return tx.restaurantPayoutSchedule.findUniqueOrThrow({
+          where: { restaurantId: input.restaurantId },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  finalizeRestaurantPayoutSchedule(input: {
+    restaurantId: string;
+    lockToken: string;
+    finalizedAt: Date;
+  }) {
+    return this.prisma.restaurantPayoutSchedule.updateMany({
+      where: {
+        restaurantId: input.restaurantId,
+        lockToken: input.lockToken,
+      },
+      data: {
+        lastFinalizedAt: input.finalizedAt,
+        lockToken: null,
+        lockExpiresAt: null,
+      },
+    });
+  }
+
+  releaseRestaurantPayoutSchedule(restaurantId: string, lockToken: string) {
+    return this.prisma.restaurantPayoutSchedule.updateMany({
+      where: { restaurantId, lockToken },
+      data: { lockToken: null, lockExpiresAt: null },
     });
   }
 

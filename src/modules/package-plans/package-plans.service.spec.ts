@@ -1675,16 +1675,16 @@ describe('PackagePlansService', () => {
       toDate: '2026-06-15T00:00:00.000Z',
     });
 
-    expect(result.data.totals.monthlyFeeDeductedAmount).toBe(59.5);
-    expect(result.data.totals.restaurantPayoutAmount).toBe(40.5);
+    expect(result.data.totals.monthlyFeeDeductedAmount).toBe(39.75);
+    expect(result.data.totals.restaurantPayoutAmount).toBe(60.25);
     expect(result.data.monthlyBilling.months).toEqual([
       expect.objectContaining({
         monthlyFeeAmount: 159,
         monthlyFeeScheduledToDate: 79.5,
         monthlyFeeDeductedBefore: 20,
-        monthlyFeeDeductedThisPayout: 59.5,
-        monthlyFeeDeductedThisMonth: 79.5,
-        monthlyFeeOutstandingAmount: 79.5,
+        monthlyFeeDeductedThisPayout: 39.75,
+        monthlyFeeDeductedThisMonth: 59.75,
+        monthlyFeeOutstandingAmount: 99.25,
       }),
     ]);
   });
@@ -2311,6 +2311,113 @@ describe('PackagePlansService', () => {
       'restaurant-1:2026-06-29T00:00:00.000Z:2026-07-06T00:00:00.000Z',
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits a full local week after a manual payout and uses contiguous boundaries', async () => {
+    const subscription = makeCommissionOnlySubscription();
+    const acquireRestaurantPayoutSchedule = jest
+      .fn()
+      .mockResolvedValueOnce({
+        lastFinalizedAt: new Date('2026-07-05T10:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        lastFinalizedAt: new Date('2026-07-05T10:00:00.000Z'),
+      });
+    const finalizedScheduleInputs: Array<{
+      restaurantId: string;
+      lockToken: string;
+      finalizedAt: Date;
+    }> = [];
+    const repository = {
+      listActiveRestaurantSubscriptionsForPayouts: jest
+        .fn()
+        .mockResolvedValue([subscription]),
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: {
+          timezone: 'Europe/Berlin',
+          billing: { email: 'billing@pizza.test' },
+        },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+      acquireRestaurantPayoutSchedule,
+      releaseRestaurantPayoutSchedule: jest
+        .fn()
+        .mockResolvedValue({ count: 1 }),
+      finalizeRestaurantPayoutSchedule: jest.fn(
+        (input: {
+          restaurantId: string;
+          lockToken: string;
+          finalizedAt: Date;
+        }) => {
+          finalizedScheduleInputs.push(input);
+          return Promise.resolve({ count: 1 });
+        },
+      ),
+    };
+    const mailerService = { sendEmail: jest.fn().mockResolvedValue(undefined) };
+    const invoiceRecordsService = {
+      hasRecord: jest.fn().mockResolvedValue(false),
+      persist: jest.fn().mockResolvedValue({ id: 'invoice-record-1' }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      mailerService as never,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    await expect(
+      service.emailDuePayoutInvoices(new Date('2026-07-11T10:00:00.000Z')),
+    ).resolves.toEqual({ sent: 0, skipped: 1 });
+    expect(repository.listPaidRestaurantOrders).not.toHaveBeenCalled();
+
+    await expect(
+      service.emailDuePayoutInvoices(new Date('2026-07-12T10:00:00.000Z')),
+    ).resolves.toEqual({ sent: 1, skipped: 0 });
+    expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      new Date('2026-07-05T10:00:00.000Z'),
+      new Date('2026-07-12T10:00:00.000Z'),
+      true,
+    );
+    expect(finalizedScheduleInputs).toHaveLength(1);
+    expect(finalizedScheduleInputs[0]?.restaurantId).toBe('restaurant-1');
+    expect(typeof finalizedScheduleInputs[0]?.lockToken).toBe('string');
+    expect(finalizedScheduleInputs[0]?.finalizedAt).toEqual(
+      new Date('2026-07-12T10:00:00.000Z'),
+    );
+  });
+
+  it('skips a concurrent scheduler run when the restaurant lock is held', async () => {
+    const repository = {
+      listActiveRestaurantSubscriptionsForPayouts: jest
+        .fn()
+        .mockResolvedValue([makeCommissionOnlySubscription()]),
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        settings: {},
+      }),
+      acquireRestaurantPayoutSchedule: jest.fn().mockResolvedValue(null),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      {} as never,
+      undefined,
+      { hasRecord: jest.fn(), persist: jest.fn() } as never,
+    );
+
+    await expect(
+      service.emailDuePayoutInvoices(new Date('2026-07-12T10:00:00.000Z')),
+    ).resolves.toEqual({ sent: 0, skipped: 1 });
   });
 
   it('uses restaurant subscription payout cycle override for automated payout periods', async () => {

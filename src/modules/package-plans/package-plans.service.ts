@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -49,6 +50,7 @@ import {
   WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
 import { PackagePlansRepository } from './package-plans.repository';
+import { nextRestaurantPayoutAt } from './payout-accounting';
 
 type TenantSubscriptionDetails = NonNullable<
   Awaited<ReturnType<PackagePlansRepository['findSubscriptionById']>>
@@ -69,6 +71,7 @@ type SubscriptionPayoutActivity = Awaited<
 interface MonthlyBillingHistory {
   commissionDeductedAmount: Prisma.Decimal;
   monthlyFeeDeductedAmount: Prisma.Decimal;
+  payoutCount: number;
 }
 
 interface SubscriptionPlanSnapshot {
@@ -1109,23 +1112,67 @@ export class PackagePlansService {
     dto: SendWeeklyRestaurantPayoutInvoiceDto,
   ) {
     this.ensureSuperAdmin(user);
-    const invoice = await this.buildWeeklyPayoutInvoice(dto);
-    const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
-
-    if (!recipientEmail) {
+    const boundaryTo = dto.toDate ? new Date(dto.toDate) : new Date();
+    const supportsScheduleLock =
+      typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+      'function';
+    const lockToken = randomUUID();
+    const schedule = supportsScheduleLock
+      ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+          restaurantId: dto.restaurantId,
+          lockToken,
+          now: boundaryTo,
+          lockExpiresAt: new Date(boundaryTo.getTime() + 15 * 60 * 1000),
+        })
+      : null;
+    if (supportsScheduleLock && !schedule) {
       throw new BadRequestException(
-        'Restaurant billing email is required to send payout invoice',
+        'A payout is already being finalized for this restaurant',
       );
     }
+    const invoice = await this.buildWeeklyPayoutInvoice({
+      ...dto,
+      fromDate: schedule?.lastFinalizedAt?.toISOString() ?? dto.fromDate,
+      toDate: boundaryTo.toISOString(),
+    });
+    const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
 
-    if (!this.mailerService) {
+    if (!recipientEmail || !this.mailerService) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          dto.restaurantId,
+          lockToken,
+        );
+      }
+      if (!recipientEmail) {
+        throw new BadRequestException(
+          'Restaurant billing email is required to send payout invoice',
+        );
+      }
       throw new InternalServerErrorException(
         'Mailer service is not configured',
       );
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
-    await this.deliverWeeklyPayoutInvoice(user, invoice, recipientEmail);
+    try {
+      await this.deliverWeeklyPayoutInvoice(user, invoice, recipientEmail);
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+          restaurantId: dto.restaurantId,
+          lockToken,
+          finalizedAt: boundaryTo,
+        });
+      }
+    } catch (error) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          dto.restaurantId,
+          lockToken,
+        );
+      }
+      throw error;
+    }
 
     return {
       data: {
@@ -1160,10 +1207,24 @@ export class PackagePlansService {
       return null;
     }
 
+    const supportsScheduleLock =
+      typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+      'function';
+    const lockToken = randomUUID();
+    const schedule = supportsScheduleLock
+      ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+          restaurantId: input.restaurantId,
+          lockToken,
+          now: input.paidAt,
+          lockExpiresAt: new Date(input.paidAt.getTime() + 15 * 60 * 1000),
+        })
+      : null;
+    if (supportsScheduleLock && !schedule) return null;
+
     const periodTo = new Date(input.paidAt.getTime() + 1);
     const invoice = await this.buildWeeklyPayoutInvoice({
       restaurantId: input.restaurantId,
-      fromDate: new Date(0).toISOString(),
+      fromDate: (schedule?.lastFinalizedAt ?? new Date(0)).toISOString(),
       toDate: periodTo.toISOString(),
     });
     let remaining = input.amount.toDecimalPlaces(2);
@@ -1185,7 +1246,15 @@ export class PackagePlansService {
       remaining = remaining.minus(payoutAmount);
     }
 
-    if (lineItems.length === 0) return null;
+    if (lineItems.length === 0) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          input.restaurantId,
+          lockToken,
+        );
+      }
+      return null;
+    }
 
     const specialInvoice = {
       ...invoice,
@@ -1196,11 +1265,8 @@ export class PackagePlansService {
       ),
       issuedAt: input.paidAt,
       period: {
-        from:
-          lineItems[0]?.paidAt instanceof Date
-            ? lineItems[0].paidAt
-            : invoice.period.from,
-        to: periodTo,
+        from: schedule?.lastFinalizedAt ?? invoice.period.from,
+        to: input.paidAt,
       },
       lineItems,
       sourceKey,
@@ -1251,6 +1317,13 @@ export class PackagePlansService {
       specialInvoice,
       { status: GeneratedInvoiceStatus.SENT },
     );
+    if (supportsScheduleLock) {
+      await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+        restaurantId: input.restaurantId,
+        lockToken,
+        finalizedAt: input.paidAt,
+      });
+    }
 
     return specialInvoice;
   }
@@ -1420,44 +1493,118 @@ export class PackagePlansService {
       }
 
       const plan = this.resolveSubscriptionInvoicePlan(subscription);
-      const period = this.resolveLastCompletedPayoutPeriod(
+      const restaurant =
+        await this.packagePlansRepository.findRestaurantPayoutScope(
+          subscription.restaurantId,
+        );
+      if (!restaurant) {
+        results.skipped += 1;
+        continue;
+      }
+      const supportsScheduleLock =
+        typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+        'function';
+      const lockToken = randomUUID();
+      const schedule = supportsScheduleLock
+        ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+            restaurantId: subscription.restaurantId,
+            lockToken,
+            now,
+            lockExpiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          })
+        : null;
+      if (supportsScheduleLock && !schedule) {
+        results.skipped += 1;
+        continue;
+      }
+
+      const fallbackPeriod = this.resolveLastCompletedPayoutPeriod(
         plan.payoutCycle,
         now,
       );
-      const invoice = await this.buildWeeklyPayoutInvoice({
-        restaurantId: subscription.restaurantId,
-        fromDate: period.from.toISOString(),
-        toDate: period.to.toISOString(),
-      });
-      const recipientEmail = invoice.restaurant.billingEmail;
-      const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
-      const hasPayoutActivity =
-        invoice.totals.ordersCount > 0 ||
-        invoice.totals.monthlyFeeDeductedAmount > 0;
-
-      if (
-        !hasPayoutActivity ||
-        (await this.invoiceRecordsService?.hasRecord(
-          GeneratedInvoiceKind.WEEKLY_PAYOUT,
-          sourceKey,
-        ))
-      ) {
+      const timezone = this.resolveRestaurantPayoutTimezone(restaurant);
+      const nextAutomaticAt = schedule?.lastFinalizedAt
+        ? nextRestaurantPayoutAt(
+            schedule.lastFinalizedAt,
+            plan.payoutCycle,
+            timezone,
+          )
+        : fallbackPeriod.to;
+      if (schedule?.lastFinalizedAt && now < nextAutomaticAt) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          subscription.restaurantId,
+          lockToken,
+        );
         results.skipped += 1;
         continue;
       }
+      const period = schedule?.lastFinalizedAt
+        ? { from: schedule.lastFinalizedAt, to: nextAutomaticAt }
+        : fallbackPeriod;
 
-      if (!recipientEmail) {
-        await this.persistWeeklyPayoutInvoice(systemUser, invoice);
-        results.skipped += 1;
-        continue;
+      try {
+        const invoice = await this.buildWeeklyPayoutInvoice({
+          restaurantId: subscription.restaurantId,
+          fromDate: period.from.toISOString(),
+          toDate: period.to.toISOString(),
+        });
+        const recipientEmail = invoice.restaurant.billingEmail;
+        const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
+        const hasPayoutActivity =
+          invoice.totals.ordersCount > 0 ||
+          invoice.totals.monthlyFeeDeductedAmount > 0;
+
+        if (
+          !hasPayoutActivity ||
+          (await this.invoiceRecordsService?.hasRecord(
+            GeneratedInvoiceKind.WEEKLY_PAYOUT,
+            sourceKey,
+          ))
+        ) {
+          if (supportsScheduleLock) {
+            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+              subscription.restaurantId,
+              lockToken,
+            );
+          }
+          results.skipped += 1;
+          continue;
+        }
+
+        if (!recipientEmail) {
+          await this.persistWeeklyPayoutInvoice(systemUser, invoice);
+          if (supportsScheduleLock) {
+            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+              subscription.restaurantId,
+              lockToken,
+            );
+          }
+          results.skipped += 1;
+          continue;
+        }
+
+        await this.deliverWeeklyPayoutInvoice(
+          systemUser,
+          invoice,
+          recipientEmail,
+        );
+        if (supportsScheduleLock) {
+          await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+            restaurantId: subscription.restaurantId,
+            lockToken,
+            finalizedAt: period.to,
+          });
+        }
+        results.sent += 1;
+      } catch (error) {
+        if (supportsScheduleLock) {
+          await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+            subscription.restaurantId,
+            lockToken,
+          );
+        }
+        throw error;
       }
-
-      await this.deliverWeeklyPayoutInvoice(
-        systemUser,
-        invoice,
-        recipientEmail,
-      );
-      results.sent += 1;
     }
 
     return results;
@@ -1483,6 +1630,7 @@ export class PackagePlansService {
       ? this.resolveSubscriptionInvoicePlan(subscription)
       : null;
     const period = this.resolvePayoutInvoicePeriod(query, plan?.payoutCycle);
+    const payoutTimezone = this.resolveRestaurantPayoutTimezone(restaurant);
     const sourceKey = `${restaurant.id}:${period.from.toISOString()}:${period.to.toISOString()}`;
     const orders = await this.packagePlansRepository.listPaidRestaurantOrders(
       restaurant.id,
@@ -1492,11 +1640,16 @@ export class PackagePlansService {
     );
     const specialPayouts = await this.listSpecialPayoutSummary(restaurant.id);
     const defaultCurrency = await this.resolveDefaultCurrency();
-    const billingMonths = this.listPayoutBillingMonths(period, orders);
+    const billingMonths = this.listPayoutBillingMonths(
+      period,
+      orders,
+      payoutTimezone,
+    );
     const monthlyHistory = await this.listMonthlyBillingHistory(
       restaurant.id,
       billingMonths,
       sourceKey,
+      payoutTimezone,
     );
     const remainingCommissionCaps = new Map<string, Prisma.Decimal | null>();
     const commissionCapsBefore = new Map<string, Prisma.Decimal | null>();
@@ -1524,6 +1677,7 @@ export class PackagePlansService {
       .map((order) => {
         const billingMonth = this.toBillingMonth(
           order.paidAt ?? order.createdAt,
+          payoutTimezone,
         );
         const orderAmount = new Prisma.Decimal(
           order.totalAmount,
@@ -1661,9 +1815,15 @@ export class PackagePlansService {
         month,
         period.to,
       );
-      const monthlyFeeDue = Prisma.Decimal.max(
-        monthlyFeeScheduledToDate.minus(history.monthlyFeeDeductedAmount),
+      const monthlyFeeOutstanding = Prisma.Decimal.max(
+        monthlyFeeAmount.minus(history.monthlyFeeDeductedAmount),
         new Prisma.Decimal(0),
+      );
+      const monthlyFeeDue = Prisma.Decimal.min(
+        history.payoutCount < 4
+          ? monthlyFeeAmount.div(4).toDecimalPlaces(2)
+          : monthlyFeeOutstanding,
+        monthlyFeeOutstanding,
       );
       const availablePayout = this.sumDecimalValues(
         monthLineItems.map((item) => item.restaurantPayoutAmount),
@@ -1780,6 +1940,7 @@ export class PackagePlansService {
       restaurant: {
         id: restaurant.id,
         name: restaurant.name,
+        timezone: payoutTimezone,
         slug: restaurant.slug,
         billingEmail: this.resolveRestaurantPayoutEmail(restaurant),
         address: this.resolveRestaurantPayoutAddress(restaurant),
@@ -1789,8 +1950,21 @@ export class PackagePlansService {
       subscription: subscription
         ? {
             id: subscription.id,
+            packagePlanId: plan?.id ?? subscription.packagePlanId,
+            billingModel: plan?.billingModel ?? PackageBillingModel.PLAN,
             billingInterval: plan?.billingInterval ?? BillingInterval.MONTHLY,
             payoutCycle: plan?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+            commissionType:
+              plan?.commissionType ?? PackageCommissionType.PERCENTAGE,
+            commissionPercentage: Number(plan?.commissionPercentage ?? 0),
+            commissionFixedAmount: Number(plan?.commissionFixedAmount ?? 0),
+            commissionCapAmount:
+              plan?.commissionCapAmount === null ||
+              plan?.commissionCapAmount === undefined
+                ? null
+                : Number(plan.commissionCapAmount),
+            vatPercentage: Number(plan?.vatPercentage ?? 0),
+            monthlyFeeAmount: Number(this.resolveMonthlyPayoutFee(plan)),
           }
         : null,
       issuedAt: new Date(),
@@ -1930,6 +2104,7 @@ export class PackagePlansService {
     restaurantId: string,
     billingMonths: string[],
     excludeSourceKey?: string,
+    timezone = 'UTC',
   ) {
     const history = new Map<string, MonthlyBillingHistory>();
 
@@ -1951,6 +2126,7 @@ export class PackagePlansService {
         );
       let commissionDeductedAmount = new Prisma.Decimal(0);
       let monthlyFeeDeductedAmount = new Prisma.Decimal(0);
+      let payoutCount = 0;
 
       for (const invoice of invoices) {
         const snapshot = this.asJsonObject(invoice.snapshot);
@@ -1964,6 +2140,7 @@ export class PackagePlansService {
         });
 
         if (storedMonth) {
+          payoutCount += 1;
           const record = this.asJsonObject(storedMonth);
           commissionDeductedAmount = commissionDeductedAmount.plus(
             this.readDecimal(record.commissionDeductedThisPayout),
@@ -1980,7 +2157,10 @@ export class PackagePlansService {
         for (const item of lineItems) {
           const line = this.asJsonObject(item);
           const paidAt = this.readString(line.paidAt);
-          if (paidAt && this.toBillingMonth(new Date(paidAt)) === month) {
+          if (
+            paidAt &&
+            this.toBillingMonth(new Date(paidAt), timezone) === month
+          ) {
             commissionDeductedAmount = commissionDeductedAmount.plus(
               this.readDecimal(line.platformCommissionAmount),
             );
@@ -1991,6 +2171,7 @@ export class PackagePlansService {
       history.set(month, {
         commissionDeductedAmount: commissionDeductedAmount.toDecimalPlaces(2),
         monthlyFeeDeductedAmount: monthlyFeeDeductedAmount.toDecimalPlaces(2),
+        payoutCount,
       });
     }
 
@@ -2005,6 +2186,7 @@ export class PackagePlansService {
       history.get(month) ?? {
         commissionDeductedAmount: new Prisma.Decimal(0),
         monthlyFeeDeductedAmount: new Prisma.Decimal(0),
+        payoutCount: 0,
       }
     );
   }
@@ -2012,6 +2194,7 @@ export class PackagePlansService {
   private listPayoutBillingMonths(
     period: { from: Date; to: Date },
     orders: RestaurantPayoutOrder[],
+    timezone = 'UTC',
   ) {
     const months = new Set<string>();
     const cursor = new Date(
@@ -2027,7 +2210,9 @@ export class PackagePlansService {
       cursor.setUTCMonth(cursor.getUTCMonth() + 1);
     }
     for (const order of orders) {
-      months.add(this.toBillingMonth(order.paidAt ?? order.createdAt));
+      months.add(
+        this.toBillingMonth(order.paidAt ?? order.createdAt, timezone),
+      );
     }
 
     return [...months].sort();
@@ -2040,8 +2225,18 @@ export class PackagePlansService {
     return { from, to };
   }
 
-  private toBillingMonth(date: Date) {
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  private toBillingMonth(date: Date, timezone = 'UTC') {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    if (!year || !month) {
+      throw new BadRequestException('Unable to resolve payout billing month');
+    }
+    return `${year}-${month}`;
   }
 
   private resolveMonthlyPayoutFee(
@@ -2161,6 +2356,12 @@ export class PackagePlansService {
     if (from >= to) {
       throw new BadRequestException('toDate must be after fromDate');
     }
+    const maximumPeriodMilliseconds = 35 * 24 * 60 * 60 * 1000;
+    if (to.getTime() - from.getTime() > maximumPeriodMilliseconds) {
+      throw new BadRequestException(
+        'Payout invoice periods cannot exceed 35 days',
+      );
+    }
 
     return { from, to };
   }
@@ -2182,6 +2383,21 @@ export class PackagePlansService {
   ) {
     const paidStamp = paidAt.toISOString().slice(0, 10).replace(/-/g, '');
     return `PAYOUT-${restaurantId.slice(-6).toUpperCase()}-SPECIAL-${paidStamp}-${payoutRequestId.slice(-6).toUpperCase()}`;
+  }
+
+  private resolveRestaurantPayoutTimezone(restaurant: RestaurantPayoutScope) {
+    const settings = this.asJsonObject(restaurant.settings);
+    const timezone =
+      this.readNestedString(settings, ['timezone']) ??
+      this.readNestedString(settings, ['localization', 'timezone']) ??
+      this.readNestedString(settings, ['businessHours', 'timezone']) ??
+      'Europe/Berlin';
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: timezone }).format(new Date());
+      return timezone;
+    } catch {
+      return 'Europe/Berlin';
+    }
   }
 
   private resolveRestaurantPayoutEmail(restaurant: RestaurantPayoutScope) {
@@ -3582,6 +3798,81 @@ export class PackagePlansService {
     });
   }
 
+  private async finalizeWeeklyPayoutAccounting(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    if (
+      !invoice.subscription ||
+      typeof this.packagePlansRepository.allocateMonthlyPayout !== 'function'
+    )
+      return;
+    const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
+    const isSpecialPayout = sourceKey.includes(':special:');
+    for (const rawMonth of invoice.monthlyBilling.months) {
+      const month = rawMonth as {
+        month: string;
+        commissionDeductedThisPayout: number;
+        monthlyFeeDeductedThisPayout: number;
+      };
+      const monthLines = invoice.lineItems.filter(
+        (line) => line.billingMonth === month.month,
+      );
+      const grossCommissionableAmount = this.sumDecimalValues(
+        monthLines.map((line) => new Prisma.Decimal(line.totalOrderAmount)),
+      );
+      const availablePayoutAmount = this.sumDecimalValues(
+        monthLines.map((line) =>
+          new Prisma.Decimal(line.restaurantPayoutAmount)
+            .plus(line.platformCommissionAmount)
+            .plus(line.monthlyFeeAmount),
+        ),
+      );
+      const allocationSourceKey = [sourceKey, month.month].join(':');
+      const snapshotHash = createHash('sha256')
+        .update(
+          JSON.stringify({
+            allocationSourceKey,
+            commission: month.commissionDeductedThisPayout,
+            monthlyFee: month.monthlyFeeDeductedThisPayout,
+            payout: availablePayoutAmount.toString(),
+          }),
+        )
+        .digest('hex');
+      await this.packagePlansRepository.allocateMonthlyPayout({
+        restaurantId: invoice.restaurant.id,
+        subscriptionId: invoice.subscription.id,
+        localMonth: month.month,
+        timezone: invoice.restaurant.timezone,
+        currency: invoice.totals.currency,
+        sourceKey: allocationSourceKey,
+        grossCommissionableAmount,
+        commissionableOrderCount: monthLines.length,
+        availablePayoutAmount,
+        packagePlanId: invoice.subscription.packagePlanId,
+        billingModel: invoice.subscription.billingModel,
+        commissionType: invoice.subscription.commissionType,
+        commissionCapAmount:
+          invoice.subscription.commissionCapAmount === null
+            ? null
+            : new Prisma.Decimal(invoice.subscription.commissionCapAmount),
+        commissionPercentage: new Prisma.Decimal(
+          invoice.subscription.commissionPercentage,
+        ),
+        commissionFixedAmount: new Prisma.Decimal(
+          invoice.subscription.commissionFixedAmount,
+        ),
+        vatPercentage: new Prisma.Decimal(invoice.subscription.vatPercentage),
+        monthlyFeeAmount: new Prisma.Decimal(
+          invoice.subscription.monthlyFeeAmount,
+        ),
+        snapshotHash,
+        isSpecialPayout,
+      });
+    }
+  }
+
   private async persistWeeklyPayoutInvoice(
     user: AuthUserContext,
     invoice: Awaited<
@@ -3594,6 +3885,10 @@ export class PackagePlansService {
     } = {},
   ) {
     if (!this.invoiceRecordsService) return;
+
+    if (options.status === GeneratedInvoiceStatus.SENT) {
+      await this.finalizeWeeklyPayoutAccounting(invoice);
+    }
 
     await this.invoiceRecordsService.persist({
       invoiceNumber: invoice.invoiceNumber,

@@ -2,6 +2,8 @@ import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
+  PackageBillingModel,
+  PackageCommissionType,
   Prisma,
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
@@ -254,5 +256,129 @@ describe('PackagePlansRepository monthly payout history', () => {
       },
       orderBy: [{ periodFrom: 'asc' }, { createdAt: 'asc' }],
     });
+  });
+});
+
+describe('PackagePlansRepository monthly payout allocation', () => {
+  const input = {
+    restaurantId: 'restaurant-1',
+    subscriptionId: 'subscription-1',
+    localMonth: '2026-06',
+    timezone: 'Europe/Berlin',
+    currency: 'EUR',
+    sourceKey: 'restaurant-1:week-1:2026-06',
+    grossCommissionableAmount: new Prisma.Decimal(400),
+    commissionableOrderCount: 1,
+    availablePayoutAmount: new Prisma.Decimal(400),
+    packagePlanId: 'plan-1',
+    billingModel: PackageBillingModel.HYBRID,
+    commissionType: PackageCommissionType.PERCENTAGE,
+    commissionCapAmount: new Prisma.Decimal(79),
+    commissionPercentage: new Prisma.Decimal(5),
+    commissionFixedAmount: new Prisma.Decimal(0),
+    vatPercentage: new Prisma.Decimal(19),
+    monthlyFeeAmount: new Prisma.Decimal(159),
+    snapshotHash: 'a'.repeat(64),
+  };
+
+  it('returns the unique existing allocation on concurrent retry', async () => {
+    const existing = { id: 'allocation-1', sourceKey: input.sourceKey };
+    const tx = {
+      restaurantPayoutAllocation: {
+        findUnique: jest.fn().mockResolvedValue(existing),
+      },
+    };
+    let transactionAttempt = 0;
+    let capturedOptions: unknown;
+    const transaction = jest.fn(
+      (
+        callback: (client: typeof tx) => Promise<unknown>,
+        options?: unknown,
+      ) => {
+        transactionAttempt += 1;
+        capturedOptions = options;
+        return transactionAttempt === 1
+          ? Promise.reject(
+              Object.assign(new Error('serialization conflict'), {
+                code: 'P2034',
+              }),
+            )
+          : callback(tx);
+      },
+    );
+    const repository = new PackagePlansRepository({
+      $transaction: transaction,
+    } as never);
+
+    await expect(repository.allocateMonthlyPayout(input)).resolves.toEqual(
+      existing,
+    );
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(capturedOptions).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  });
+
+  it('records a partial special payout without commission or monthly-fee duplication', async () => {
+    let capturedAllocation: Record<string, unknown> = {};
+    const create = jest.fn(({ data }: { data: Record<string, unknown> }) => {
+      capturedAllocation = data;
+      return Promise.resolve({ id: 'allocation-special', ...data });
+    });
+    let capturedLedgerUpdate: {
+      data?: {
+        commissionAllocatedAmount?: Prisma.Decimal;
+        monthlyFeeAllocatedAmount?: Prisma.Decimal;
+      };
+    } = {};
+    const update = jest.fn((args: typeof capturedLedgerUpdate) => {
+      capturedLedgerUpdate = args;
+      return Promise.resolve({ id: 'ledger-1' });
+    });
+    const tx = {
+      restaurantPayoutAllocation: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(2),
+        create,
+      },
+      restaurantPayoutMonthlyLedger: {
+        upsert: jest.fn().mockResolvedValue({
+          id: 'ledger-1',
+          finalizedAt: null,
+          commissionCapAmount: new Prisma.Decimal(79),
+          commissionAllocatedAmount: new Prisma.Decimal(45),
+          monthlyFeeAmount: new Prisma.Decimal(159),
+          monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
+        }),
+        update,
+      },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+
+    await repository.allocateMonthlyPayout({
+      ...input,
+      sourceKey: 'restaurant-1:special:request-1:2026-06',
+      availablePayoutAmount: new Prisma.Decimal(12),
+      isSpecialPayout: true,
+    });
+
+    expect(capturedAllocation).toMatchObject({
+      sequence: 3,
+      commissionAmount: new Prisma.Decimal(0),
+      monthlyFeeAmount: new Prisma.Decimal(0),
+      availablePayoutAmount: new Prisma.Decimal(12),
+      isSpecialPayout: true,
+    });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(capturedLedgerUpdate.data?.commissionAllocatedAmount).toEqual(
+      new Prisma.Decimal(45),
+    );
+    expect(capturedLedgerUpdate.data?.monthlyFeeAllocatedAmount).toEqual(
+      new Prisma.Decimal('79.50'),
+    );
   });
 });

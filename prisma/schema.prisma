@@ -2294,13 +2294,78 @@ model GeneratedInvoice {
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  events GeneratedInvoiceEvent[]
+  events            GeneratedInvoiceEvent[]
+  payoutAllocations RestaurantPayoutAllocation[]
 
   @@index([kind, sourceKey])
   @@index([restaurantId, createdAt])
   @@index([orderId])
   @@index([subscriptionId])
   @@map("generated_invoices")
+}
+
+model RestaurantPayoutMonthlyLedger {
+  id                          String                @id @default(cuid())
+  restaurantId                String                @map("restaurant_id")
+  subscriptionId              String                @map("subscription_id")
+  localMonth                  String                @map("local_month") @db.VarChar(7)
+  timezone                    String                @db.VarChar(100)
+  currency                    String                @db.VarChar(10)
+  packagePlanId               String                @map("package_plan_id")
+  billingModel                PackageBillingModel   @map("billing_model")
+  commissionType              PackageCommissionType @map("commission_type")
+  commissionPercentage        Decimal               @map("commission_percentage") @db.Decimal(5, 2)
+  commissionFixedAmount       Decimal               @map("commission_fixed_amount") @db.Decimal(10, 2)
+  commissionCapAmount         Decimal?              @map("commission_cap_amount") @db.Decimal(10, 2)
+  vatPercentage               Decimal               @map("vat_percentage") @db.Decimal(5, 2)
+  commissionAllocatedAmount   Decimal               @default(0) @map("commission_allocated_amount") @db.Decimal(10, 2)
+  monthlyFeeAmount            Decimal               @map("monthly_fee_amount") @db.Decimal(10, 2)
+  monthlyFeeAllocatedAmount   Decimal               @default(0) @map("monthly_fee_allocated_amount") @db.Decimal(10, 2)
+  monthlyFeeOutstandingAmount Decimal               @default(0) @map("monthly_fee_outstanding_amount") @db.Decimal(10, 2)
+  finalizedAt                 DateTime?             @map("finalized_at") @db.Timestamptz
+  createdAt                   DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime              @updatedAt @map("updated_at") @db.Timestamptz
+
+  allocations RestaurantPayoutAllocation[]
+
+  @@unique([restaurantId, subscriptionId, localMonth], map: "restaurant_payout_monthly_ledgers_scope_key")
+  @@index([restaurantId, localMonth], map: "restaurant_payout_monthly_ledgers_lookup_idx")
+  @@index([finalizedAt, localMonth], map: "restaurant_payout_monthly_ledgers_finalize_idx")
+  @@map("restaurant_payout_monthly_ledgers")
+}
+
+model RestaurantPayoutAllocation {
+  id                    String   @id @default(cuid())
+  ledgerId              String   @map("ledger_id")
+  generatedInvoiceId    String?  @map("generated_invoice_id")
+  sourceKey             String   @unique @map("source_key") @db.VarChar(255)
+  sequence              Int
+  commissionAmount      Decimal  @map("commission_amount") @db.Decimal(10, 2)
+  monthlyFeeAmount      Decimal  @map("monthly_fee_amount") @db.Decimal(10, 2)
+  availablePayoutAmount Decimal  @map("available_payout_amount") @db.Decimal(12, 2)
+  isSpecialPayout       Boolean  @default(false) @map("is_special_payout")
+  snapshotHash          String   @map("snapshot_hash") @db.VarChar(64)
+  finalizedAt           DateTime @default(now()) @map("finalized_at") @db.Timestamptz
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ledger           RestaurantPayoutMonthlyLedger @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
+  generatedInvoice GeneratedInvoice?             @relation(fields: [generatedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@unique([ledgerId, sequence], map: "restaurant_payout_allocations_sequence_key")
+  @@index([ledgerId, finalizedAt], map: "restaurant_payout_allocations_ledger_idx")
+  @@index([generatedInvoiceId], map: "restaurant_payout_allocations_invoice_idx")
+  @@map("restaurant_payout_allocations")
+}
+
+model RestaurantPayoutSchedule {
+  restaurantId    String    @id @map("restaurant_id")
+  lastFinalizedAt DateTime? @map("last_finalized_at") @db.Timestamptz
+  lockToken       String?   @unique @map("lock_token") @db.VarChar(64)
+  lockExpiresAt   DateTime? @map("lock_expires_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("restaurant_payout_schedules")
 }
 
 model GeneratedInvoiceEvent {
