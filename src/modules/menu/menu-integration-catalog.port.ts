@@ -18,6 +18,14 @@ export interface MenuIntegrationItemOption {
   price: number;
 }
 
+export interface MenuIntegrationDealOption {
+  key: string;
+  dealId: string;
+  dealName?: string;
+  packageName?: string;
+  price: number;
+}
+
 export interface MenuIntegrationModifier {
   key: string;
   modifierId: string;
@@ -26,7 +34,7 @@ export interface MenuIntegrationModifier {
 }
 
 export interface MenuIntegrationCatalog {
-  items: MenuIntegrationItemOption[];
+  items: Array<MenuIntegrationItemOption | MenuIntegrationDealOption>;
   modifiers: MenuIntegrationModifier[];
 }
 

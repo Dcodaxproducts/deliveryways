@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { WinOrderCatalogMappingType } from '@prisma/client';
 import { UserRoleEnum } from '../../common/enums';
 import { WinOrderMappingService } from './winorder-mapping.service';
@@ -160,6 +160,95 @@ describe('WinOrderMappingService', () => {
         },
       ],
     );
+  });
+
+  it('persists canonical package and legacy deal keys with resolved local names', async () => {
+    const connectionService = {
+      resolveAdminScope: jest.fn().mockResolvedValue(scope),
+    };
+    const connectionRepository = {
+      findByBranch: jest.fn().mockResolvedValue({ id: 'connection-1' }),
+    };
+    const mappingRepository = {
+      replaceCatalog: jest.fn(),
+      list: jest.fn().mockResolvedValue({
+        catalogMappings: [],
+        paymentMappings: [],
+      }),
+    };
+    const menuCatalog = {
+      getCatalog: jest.fn().mockResolvedValue({
+        items: [
+          {
+            key: 'package:family',
+            dealId: 'family',
+            packageName: 'Family Package',
+            price: 25,
+          },
+        ],
+        modifiers: [],
+      }),
+    };
+    const service = new WinOrderMappingService(
+      connectionService as never,
+      connectionRepository as never,
+      mappingRepository as never,
+      menuCatalog as never,
+    );
+
+    await service.replaceCatalog(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN },
+      'branch-1',
+      {
+        mappings: [
+          {
+            mappingType: WinOrderCatalogMappingType.ITEM,
+            localKey: 'deal:family',
+            externalArticleName: 'Familienpaket',
+          },
+        ],
+      },
+    );
+
+    expect(mappingRepository.replaceCatalog).toHaveBeenCalledWith(
+      scope,
+      'connection-1',
+      [
+        expect.objectContaining({
+          mappingType: WinOrderCatalogMappingType.ITEM,
+          localKey: 'deal:family',
+          localName: 'Family Package',
+        }),
+      ],
+    );
+  });
+
+  it('does not load catalog data when branch scope authorization fails', async () => {
+    const connectionService = {
+      resolveAdminScope: jest
+        .fn()
+        .mockRejectedValue(new ForbiddenException('Branch access denied')),
+    };
+    const connectionRepository = { findByBranch: jest.fn() };
+    const mappingRepository = { replaceCatalog: jest.fn() };
+    const menuCatalog = { getCatalog: jest.fn() };
+    const service = new WinOrderMappingService(
+      connectionService as never,
+      connectionRepository as never,
+      mappingRepository as never,
+      menuCatalog as never,
+    );
+
+    await expect(
+      service.replaceCatalog(
+        { uid: 'admin-1', role: UserRoleEnum.BRANCH_ADMIN },
+        'other-branch',
+        { mappings: [] },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(connectionRepository.findByBranch).not.toHaveBeenCalled();
+    expect(menuCatalog.getCatalog).not.toHaveBeenCalled();
+    expect(mappingRepository.replaceCatalog).not.toHaveBeenCalled();
   });
 
   it('rejects an empty catalog override', async () => {

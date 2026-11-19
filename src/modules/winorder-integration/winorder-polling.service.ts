@@ -143,8 +143,18 @@ export class WinOrderPollingService {
         };
       });
       if (item.dealId) {
+        const dealMapping =
+          catalogMappings.get(
+            `${WinOrderCatalogMappingType.ITEM}:deal:${item.dealId}`,
+          ) ??
+          catalogMappings.get(
+            `${WinOrderCatalogMappingType.ITEM}:package:${item.dealId}`,
+          );
+        const dealName = item.dealName ?? `Deal ${item.dealId}`;
         subArticles.unshift({
-          Comment: `Deal-Artikel: ${item.dealName ?? `Deal ${item.dealId}`}`,
+          ArticleNo: dealMapping?.externalArticleNo ?? undefined,
+          ArticleName: dealMapping?.externalArticleName || dealName,
+          Comment: `Deal-Artikel: ${dealName}`,
           Count: 1,
         });
       }

@@ -1,5 +1,9 @@
 import { NotFoundException } from '@nestjs/common';
-import { MenuItemPricingMode, Prisma } from '@prisma/client';
+import {
+  CouponDealSelectionMode,
+  MenuItemPricingMode,
+  Prisma,
+} from '@prisma/client';
 import { MenuIntegrationCatalogService } from './menu-integration-catalog.service';
 
 describe('MenuIntegrationCatalogService', () => {
@@ -14,6 +18,7 @@ describe('MenuIntegrationCatalogService', () => {
       branchExists: jest.fn(),
       listItems: jest.fn(),
       listModifiers: jest.fn(),
+      listDeals: jest.fn(),
     };
     return {
       service: new MenuIntegrationCatalogService(repository as never),
@@ -43,6 +48,20 @@ describe('MenuIntegrationCatalogService', () => {
     repository.listModifiers.mockResolvedValue([
       { id: 'olives', name: 'Olives', priceDelta: new Prisma.Decimal(2) },
     ]);
+    repository.listDeals.mockResolvedValue([
+      {
+        id: 'family',
+        title: 'Family Package',
+        discountValue: new Prisma.Decimal(25),
+        dealSelectionMode: CouponDealSelectionMode.FIXED_ITEMS,
+      },
+      {
+        id: 'lunch',
+        title: 'Lunch Deal',
+        discountValue: new Prisma.Decimal(12),
+        dealSelectionMode: CouponDealSelectionMode.FLEXIBLE_ITEMS,
+      },
+    ]);
 
     const result = await service.getCatalog(scope);
 
@@ -53,6 +72,18 @@ describe('MenuIntegrationCatalogService', () => {
         variationId: 'large',
         price: 15,
       }),
+      {
+        key: 'package:family',
+        dealId: 'family',
+        packageName: 'Family Package',
+        price: 25,
+      },
+      {
+        key: 'deal:lunch',
+        dealId: 'lunch',
+        dealName: 'Lunch Deal',
+        price: 12,
+      },
     ]);
     expect(result.modifiers).toEqual([
       expect.objectContaining({ key: 'modifier:olives', priceDelta: 2 }),
@@ -67,5 +98,6 @@ describe('MenuIntegrationCatalogService', () => {
       NotFoundException,
     );
     expect(repository.listItems).not.toHaveBeenCalled();
+    expect(repository.listDeals).not.toHaveBeenCalled();
   });
 });

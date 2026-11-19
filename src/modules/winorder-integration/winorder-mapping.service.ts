@@ -66,9 +66,11 @@ export class WinOrderMappingService {
         (item) =>
           [
             item.key,
-            item.variationName
-              ? `${item.menuItemName} — ${item.variationName}`
-              : item.menuItemName,
+            'menuItemName' in item
+              ? item.variationName
+                ? `${item.menuItemName} — ${item.variationName}`
+                : item.menuItemName
+              : (item.dealName ?? item.packageName ?? item.key),
           ] as const,
       ),
       ...catalog.modifiers.map(
@@ -78,13 +80,19 @@ export class WinOrderMappingService {
     ]);
     const uniqueKeys = new Set<string>();
     const mappings = dto.mappings.map((mapping) => {
-      const expectedType = mapping.localKey.startsWith('item:')
-        ? WinOrderCatalogMappingType.ITEM
-        : mapping.localKey.startsWith('modifier:')
-          ? WinOrderCatalogMappingType.MODIFIER
-          : WinOrderCatalogMappingType.SERVICE_CHARGE;
+      const expectedType =
+        mapping.localKey.startsWith('item:') ||
+        mapping.localKey.startsWith('deal:') ||
+        mapping.localKey.startsWith('package:')
+          ? WinOrderCatalogMappingType.ITEM
+          : mapping.localKey.startsWith('modifier:')
+            ? WinOrderCatalogMappingType.MODIFIER
+            : WinOrderCatalogMappingType.SERVICE_CHARGE;
+      const canonicalName =
+        names.get(mapping.localKey) ??
+        this.resolveLegacyDealName(mapping.localKey, names);
       if (
-        !names.has(mapping.localKey) ||
+        !canonicalName ||
         expectedType !== mapping.mappingType ||
         uniqueKeys.has(`${mapping.mappingType}:${mapping.localKey}`)
       ) {
@@ -103,7 +111,7 @@ export class WinOrderMappingService {
       return {
         mappingType: mapping.mappingType,
         localKey: mapping.localKey,
-        localName: names.get(mapping.localKey)!,
+        localName: canonicalName,
         externalArticleNo,
         externalArticleName,
       };
@@ -136,6 +144,18 @@ export class WinOrderMappingService {
       dto.mappings,
     );
     return this.get(user, branchId);
+  }
+
+  private resolveLegacyDealName(
+    localKey: string,
+    names: ReadonlyMap<string, string>,
+  ): string | undefined {
+    const match = /^(deal|package):(.+)$/.exec(localKey);
+    if (!match) {
+      return undefined;
+    }
+    const alternatePrefix = match[1] === 'deal' ? 'package' : 'deal';
+    return names.get(`${alternatePrefix}:${match[2]}`);
   }
 
   private async requireConnection(scope: {

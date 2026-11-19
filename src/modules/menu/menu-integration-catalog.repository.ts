@@ -1,4 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import {
+  CouponCampaignKind,
+  CouponDiscountType,
+  CouponStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
 import { MenuIntegrationScope } from './menu-integration-catalog.port';
 
@@ -67,6 +72,33 @@ export class MenuIntegrationCatalogRepository {
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, priceDelta: true },
+    });
+  }
+
+  async listDeals(scope: MenuIntegrationScope) {
+    const now = new Date();
+    return this.prisma.coupon.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        restaurantId: scope.restaurantId,
+        kind: CouponCampaignKind.PROMOTION,
+        discountType: CouponDiscountType.FIXED_PRICE,
+        status: CouponStatus.ACTIVE,
+        isActive: true,
+        deletedAt: null,
+        AND: [
+          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+        ],
+        OR: [{ branchId: null }, { branchId: scope.branchId }],
+      },
+      orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
+      select: {
+        id: true,
+        title: true,
+        discountValue: true,
+        dealSelectionMode: true,
+      },
     });
   }
 }

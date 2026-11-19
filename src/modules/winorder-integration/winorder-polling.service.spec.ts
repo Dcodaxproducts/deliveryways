@@ -568,7 +568,7 @@ describe('WinOrderPollingService', () => {
     );
   });
 
-  it('marks deal components without changing WinOrder article matching', async () => {
+  it('exports a resolved package container without changing component matching', async () => {
     const dealOrder: IntegrationOrder = {
       ...order,
       serviceChargeAmount: 0,
@@ -587,7 +587,14 @@ describe('WinOrderPollingService', () => {
     const connections = { findByBranch: jest.fn().mockResolvedValue({}) };
     const mappings = {
       list: jest.fn().mockResolvedValue({
-        catalogMappings: [],
+        catalogMappings: [
+          {
+            mappingType: WinOrderCatalogMappingType.ITEM,
+            localKey: 'package:deal-1',
+            externalArticleNo: 'PKG-1',
+            externalArticleName: 'Familienpaket',
+          },
+        ],
         paymentMappings: [],
       }),
     };
@@ -608,7 +615,12 @@ describe('WinOrderPollingService', () => {
         Article: Array<{
           ArticleName: string;
           SubArticleList?: {
-            SubArticle: Array<{ Comment?: string; Count: number }>;
+            SubArticle: Array<{
+              ArticleNo?: string;
+              ArticleName?: string;
+              Comment?: string;
+              Count: number;
+            }>;
           };
         }>;
       };
@@ -617,7 +629,12 @@ describe('WinOrderPollingService', () => {
 
     expect(article.ArticleName).toBe('Pizza');
     expect(article.SubArticleList?.SubArticle).toEqual([
-      { Comment: 'Deal-Artikel: Family Feast', Count: 1 },
+      {
+        ArticleNo: 'PKG-1',
+        ArticleName: 'Familienpaket',
+        Comment: 'Deal-Artikel: Family Feast',
+        Count: 1,
+      },
       { Comment: 'Well done', Count: 1 },
     ]);
     expect(exports.markFailed).not.toHaveBeenCalled();
