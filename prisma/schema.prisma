@@ -2331,6 +2331,8 @@ model RestaurantPayoutMonthlyLedger {
   vatPercentage               Decimal               @map("vat_percentage") @db.Decimal(5, 2)
   commissionAllocatedAmount   Decimal               @default(0) @map("commission_allocated_amount") @db.Decimal(10, 2)
   monthlyFeeAmount            Decimal               @map("monthly_fee_amount") @db.Decimal(10, 2)
+  payoutCycle                 PackagePayoutCycle    @default(WEEKLY) @map("payout_cycle")
+  payoutOpportunities         Int                   @default(4) @map("payout_opportunities")
   monthlyFeeAllocatedAmount   Decimal               @default(0) @map("monthly_fee_allocated_amount") @db.Decimal(10, 2)
   monthlyFeeOutstandingAmount Decimal               @default(0) @map("monthly_fee_outstanding_amount") @db.Decimal(10, 2)
   finalizedAt                 DateTime?             @map("finalized_at") @db.Timestamptz
@@ -2394,7 +2396,13 @@ model PayoutInvoiceEmailOutbox {
   generatedInvoiceId String    @unique @map("generated_invoice_id")
   recipientEmail     String    @map("recipient_email") @db.VarChar(320)
   actorId            String?   @map("actor_id")
+  deliveryState      String    @default("PENDING") @map("delivery_state") @db.VarChar(24)
+  providerMessageKey String    @unique @map("provider_message_key") @db.VarChar(255)
   claimedAt          DateTime? @map("claimed_at") @db.Timestamptz
+  claimToken         String?   @unique @map("claim_token") @db.VarChar(64)
+  claimExpiresAt     DateTime? @map("claim_expires_at") @db.Timestamptz
+  nextAttemptAt      DateTime? @map("next_attempt_at") @db.Timestamptz
+  providerAcceptedAt DateTime? @map("provider_accepted_at") @db.Timestamptz
   sentAt             DateTime? @map("sent_at") @db.Timestamptz
   attempts           Int       @default(0)
   lastError          String?   @map("last_error") @db.VarChar(1000)
@@ -2405,7 +2413,7 @@ model PayoutInvoiceEmailOutbox {
   restaurant       Restaurant       @relation("PayoutOutboxRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
   generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
 
-  @@index([sentAt, claimedAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
+  @@index([sentAt, nextAttemptAt, claimExpiresAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
   @@map("payout_invoice_email_outbox")
 }
 

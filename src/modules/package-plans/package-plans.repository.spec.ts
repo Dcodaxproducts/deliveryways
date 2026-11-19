@@ -4,6 +4,7 @@ import {
   OrderStatus,
   PackageBillingModel,
   PackageCommissionType,
+  PackagePayoutCycle,
   Prisma,
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
@@ -280,6 +281,8 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     commissionFixedAmount: new Prisma.Decimal(0),
     vatPercentage: new Prisma.Decimal(19),
     monthlyFeeAmount: new Prisma.Decimal(159),
+    payoutCycle: PackagePayoutCycle.WEEKLY,
+    payoutOpportunities: 4,
     expectedCommissionAmount: new Prisma.Decimal(20),
     expectedMonthlyFeeAmount: new Prisma.Decimal('39.75'),
     snapshotHash: 'a'.repeat(64),
@@ -355,6 +358,8 @@ describe('PackagePlansRepository monthly payout allocation', () => {
           commissionCapAmount: new Prisma.Decimal(79),
           commissionAllocatedAmount: new Prisma.Decimal(45),
           monthlyFeeAmount: new Prisma.Decimal(159),
+          payoutCycle: PackagePayoutCycle.WEEKLY,
+          payoutOpportunities: 4,
           monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
         }),
         update,
@@ -393,10 +398,17 @@ describe('PackagePlansRepository monthly payout allocation', () => {
   });
 
   it('claims a payout email outbox only once so retries cannot duplicate delivery', async () => {
-    const updateMany = jest
-      .fn()
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 });
+    type UpdateManyArgs = {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    let capturedClaim: UpdateManyArgs | null = null;
+    let claimAttempt = 0;
+    const updateMany = jest.fn((args: UpdateManyArgs) => {
+      capturedClaim ??= args;
+      claimAttempt += 1;
+      return Promise.resolve({ count: claimAttempt === 1 ? 1 : 0 });
+    });
     const findUniqueOrThrow = jest.fn().mockResolvedValue({
       id: 'outbox-1',
       generatedInvoiceId: 'invoice-1',
@@ -424,5 +436,104 @@ describe('PackagePlansRepository monthly payout allocation', () => {
       ),
     ).resolves.toBeNull();
     expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
+    expect(capturedClaim).toMatchObject({
+      where: {
+        generatedInvoiceId: 'invoice-1',
+        sentAt: null,
+        deliveryState: { not: 'FAILED' },
+        OR: [
+          {
+            deliveryState: 'SENDING',
+            claimExpiresAt: { lte: new Date('2026-07-01T10:00:00.000Z') },
+          },
+          expect.objectContaining({ claimToken: null, attempts: { lt: 8 } }),
+        ],
+      },
+      data: {
+        deliveryState: 'SENDING',
+        claimExpiresAt: new Date('2026-07-01T10:05:00.000Z'),
+      },
+    });
+  });
+
+  it('releases a failed lease with exponential backoff and fencing token', async () => {
+    type UpdateManyArgs = {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+    let capturedFailure: UpdateManyArgs | null = null;
+    const updateMany = jest.fn((args: UpdateManyArgs) => {
+      capturedFailure = args;
+      return Promise.resolve({ count: 1 });
+    });
+    const repository = new PackagePlansRepository({
+      payoutInvoiceEmailOutbox: { updateMany },
+    } as never);
+
+    await repository.markPayoutInvoiceEmailFailed({
+      outboxId: 'outbox-1',
+      claimToken: 'claim-1',
+      attempts: 3,
+      failedAt: new Date('2026-07-01T10:00:00.000Z'),
+      error: 'smtp unavailable',
+    });
+
+    expect(capturedFailure).toMatchObject({
+      where: { id: 'outbox-1', claimToken: 'claim-1', sentAt: null },
+      data: {
+        deliveryState: 'RETRY_WAIT',
+        claimToken: null,
+        claimExpiresAt: null,
+        nextAttemptAt: new Date('2026-07-01T10:02:00.000Z'),
+      },
+    });
+  });
+
+  it('fences stale workers when marking provider-accepted mail sent', async () => {
+    let sentAttempt = 0;
+    const updateMany = jest.fn(() => {
+      sentAttempt += 1;
+      return Promise.resolve({ count: sentAttempt === 1 ? 1 : 0 });
+    });
+    type EventCreateArgs = { data: { metadata?: unknown } };
+    let capturedEvent: EventCreateArgs | null = null;
+    const createEvent = jest.fn((args: EventCreateArgs) => {
+      capturedEvent = args;
+      return Promise.resolve({});
+    });
+    const tx = {
+      payoutInvoiceEmailOutbox: { updateMany },
+      generatedInvoice: { update: jest.fn().mockResolvedValue({}) },
+      generatedInvoiceEvent: { create: createEvent },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+    const input = {
+      outboxId: 'outbox-1',
+      generatedInvoiceId: 'invoice-1',
+      recipientEmail: 'billing@example.test',
+      claimToken: 'claim-current',
+      providerMessageKey: 'payout-invoice-invoice-1@deliveryways.app',
+      sentAt: new Date('2026-07-01T10:01:00.000Z'),
+    };
+
+    await expect(repository.markPayoutInvoiceEmailSent(input)).resolves.toBe(
+      true,
+    );
+    await expect(repository.markPayoutInvoiceEmailSent(input)).resolves.toBe(
+      false,
+    );
+    expect(tx.generatedInvoice.update).toHaveBeenCalledTimes(1);
+    expect(capturedEvent).toMatchObject({
+      data: {
+        metadata: {
+          outboxId: 'outbox-1',
+          providerMessageKey: input.providerMessageKey,
+        },
+      },
+    });
   });
 });

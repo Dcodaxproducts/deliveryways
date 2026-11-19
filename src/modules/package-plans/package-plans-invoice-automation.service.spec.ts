@@ -1,12 +1,17 @@
 import { PackagePlansInvoiceAutomationService } from './package-plans-invoice-automation.service';
 
 describe('PackagePlansInvoiceAutomationService', () => {
-  it('automates only unified subscription invoices', async () => {
+  it('runs payout recovery, due payouts, and subscription invoices', async () => {
     const packagePlansService = {
       emailDueSubscriptionInvoices: jest
         .fn()
         .mockResolvedValue({ sent: 1, skipped: 0 }),
-      emailDuePayoutInvoices: jest.fn(),
+      retryDuePayoutInvoiceEmails: jest
+        .fn()
+        .mockResolvedValue({ sent: 0, failed: 0, skipped: 0 }),
+      emailDuePayoutInvoices: jest
+        .fn()
+        .mockResolvedValue({ sent: 0, skipped: 0 }),
     };
     const service = new PackagePlansInvoiceAutomationService(
       packagePlansService as never,
@@ -17,6 +22,9 @@ describe('PackagePlansInvoiceAutomationService', () => {
     expect(
       packagePlansService.emailDueSubscriptionInvoices,
     ).toHaveBeenCalledTimes(1);
-    expect(packagePlansService.emailDuePayoutInvoices).not.toHaveBeenCalled();
+    expect(
+      packagePlansService.retryDuePayoutInvoiceEmails,
+    ).toHaveBeenCalledTimes(1);
+    expect(packagePlansService.emailDuePayoutInvoices).toHaveBeenCalledTimes(1);
   });
 });
