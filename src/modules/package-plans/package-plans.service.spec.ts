@@ -837,8 +837,8 @@ describe('PackagePlansService', () => {
 
     expect(result.totalOrderAmount).toBe(200);
     expect(result.billingPeriod).toEqual({
-      from: new Date('2026-09-01T00:00:00.000Z'),
-      to: new Date('2026-10-01T00:00:00.000Z'),
+      from: new Date('2026-08-31T22:00:00.000Z'),
+      to: new Date('2026-09-30T22:00:00.000Z'),
     });
     expect(result.billingPeriodSummary).toMatchObject({
       ordersCount: 1,
@@ -921,12 +921,12 @@ describe('PackagePlansService', () => {
       billingMonth: '2026-09',
       platformCommissionAmount: 25,
       monthlyFeeAmount: 159,
-      monthlyFeeScheduledToDate: 79.5,
+      monthlyFeeScheduledToDate: 59.75,
       monthlyFeeDeductedBefore: 20,
-      monthlyFeeDeductedAmount: 59.5,
-      monthlyFeeDeductedThisMonth: 79.5,
-      monthlyFeeOutstandingAmount: 79.5,
-      restaurantPayoutAmount: 415.5,
+      monthlyFeeDeductedAmount: 39.75,
+      monthlyFeeDeductedThisMonth: 59.75,
+      monthlyFeeOutstandingAmount: 99.25,
+      restaurantPayoutAmount: 435.25,
       currency: 'PKR',
     });
     expect(repository.listRestaurantWalletPayoutOrders).toHaveBeenCalledWith(
@@ -1591,7 +1591,9 @@ describe('PackagePlansService', () => {
         .fn()
         .mockImplementation((_restaurantId: string, monthFrom: Date) =>
           Promise.resolve(
-            monthFrom.getUTCMonth() === 5 ? [monthlyHistory] : [],
+            monthFrom.toISOString() === '2026-05-31T22:00:00.000Z'
+              ? [monthlyHistory]
+              : [],
           ),
         ),
     };
@@ -1680,7 +1682,7 @@ describe('PackagePlansService', () => {
     expect(result.data.monthlyBilling.months).toEqual([
       expect.objectContaining({
         monthlyFeeAmount: 159,
-        monthlyFeeScheduledToDate: 79.5,
+        monthlyFeeScheduledToDate: 59.75,
         monthlyFeeDeductedBefore: 20,
         monthlyFeeDeductedThisPayout: 39.75,
         monthlyFeeDeductedThisMonth: 59.75,
@@ -1750,7 +1752,13 @@ describe('PackagePlansService', () => {
       listRestaurantMonthlyPayoutInvoices: jest
         .fn()
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(history(159)),
+        .mockImplementation((_restaurantId: string, monthFrom: Date) =>
+          Promise.resolve(
+            monthFrom.toISOString() === '2026-05-31T22:00:00.000Z'
+              ? history(159)
+              : [],
+          ),
+        ),
     };
     const service = new PackagePlansService(repository as never);
 
@@ -2288,13 +2296,13 @@ describe('PackagePlansService', () => {
     expect(result).toEqual({ sent: 1, skipped: 0 });
     expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
       'restaurant-1',
-      new Date('2026-06-29T00:00:00.000Z'),
-      new Date('2026-07-06T00:00:00.000Z'),
+      new Date('2026-06-28T22:00:00.000Z'),
+      new Date('2026-07-05T22:00:00.000Z'),
       true,
     );
     expect(invoiceRecordsService.hasRecord).toHaveBeenCalledWith(
       'WEEKLY_PAYOUT',
-      'restaurant-1:2026-06-29T00:00:00.000Z:2026-07-06T00:00:00.000Z',
+      'payout:regular:restaurant-1:2026-06-28T22:00:00.000Z:2026-07-05T22:00:00.000Z',
     );
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
@@ -2308,7 +2316,7 @@ describe('PackagePlansService', () => {
     ).resolves.toEqual({ sent: 0, skipped: 1 });
     expect(invoiceRecordsService.hasRecord).toHaveBeenLastCalledWith(
       'WEEKLY_PAYOUT',
-      'restaurant-1:2026-06-29T00:00:00.000Z:2026-07-06T00:00:00.000Z',
+      'payout:regular:restaurant-1:2026-06-28T22:00:00.000Z:2026-07-05T22:00:00.000Z',
     );
     expect(mailerService.sendEmail).toHaveBeenCalledTimes(1);
   });
@@ -2463,8 +2471,8 @@ describe('PackagePlansService', () => {
 
     expect(repository.listPaidRestaurantOrders).toHaveBeenCalledWith(
       'restaurant-1',
-      new Date('2026-06-01T00:00:00.000Z'),
-      new Date('2026-07-01T00:00:00.000Z'),
+      new Date('2026-05-31T22:00:00.000Z'),
+      new Date('2026-06-30T22:00:00.000Z'),
       true,
     );
   });
@@ -2540,5 +2548,103 @@ describe('PackagePlansService', () => {
     expect(persistedInvoice.lineItems.map((item) => item.orderId)).toEqual([
       'order-new',
     ]);
+  });
+
+  it('returns a finalized payout snapshot without rebuilding changed orders', async () => {
+    const listPaidRestaurantOrders = jest.fn();
+    const snapshot = {
+      invoiceNumber: 'PAYOUT-STORED',
+      restaurant: {
+        id: 'restaurant-1',
+        name: 'Original Restaurant',
+        timezone: 'Europe/Berlin',
+        slug: 'original',
+        billingEmail: 'original@example.test',
+        address: null,
+        taxNumber: null,
+      },
+      tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      subscription: null,
+      issuedAt: '2026-07-01T10:00:00.000Z',
+      period: {
+        from: '2026-06-01T00:00:00.000Z',
+        to: '2026-06-08T00:00:00.000Z',
+      },
+      lineItems: [],
+      monthlyBilling: { months: [] },
+      totals: {
+        ordersCount: 0,
+        totalOrderAmount: 0,
+        grossAmount: 42,
+        platformCommissionAmount: 0,
+        restaurantTransactionFeeAmount: 0,
+        vatPercentage: 0,
+        vatAmount: 0,
+        previousPayoutAmount: 0,
+        monthlyFeeDeductedAmount: 0,
+        monthlyFeeOutstandingAmount: 0,
+        restaurantPayoutAmount: 42,
+        currency: 'EUR',
+      },
+      note: 'immutable',
+    };
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        settings: { timezone: 'Europe/Berlin' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(null),
+      findFinalizedPayoutInvoice: jest.fn().mockResolvedValue({
+        id: 'invoice-1',
+        invoiceNumber: 'PAYOUT-STORED',
+        snapshot,
+      }),
+      listPaidRestaurantOrders,
+    };
+    const invoiceRecordsService = { persist: jest.fn() };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      undefined,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-01T00:00:00.000Z',
+      toDate: '2026-06-08T00:00:00.000Z',
+    });
+
+    expect(result.data.invoiceNumber).toBe('PAYOUT-STORED');
+    expect(result.data.totals.restaurantPayoutAmount).toBe(42);
+    expect(listPaidRestaurantOrders).not.toHaveBeenCalled();
+    expect(invoiceRecordsService.persist).not.toHaveBeenCalled();
+  });
+
+  it('creates distinct collision-proof invoice numbers for intraday periods', () => {
+    const service = new PackagePlansService({} as never);
+    const invoiceNumber = (
+      service as unknown as {
+        buildWeeklyPayoutInvoiceNumber: (
+          restaurantId: string,
+          from: Date,
+          to: Date,
+        ) => string;
+      }
+    ).buildWeeklyPayoutInvoiceNumber.bind(service);
+    const first = invoiceNumber(
+      'restaurant-1',
+      new Date('2026-06-01T10:00:00.000Z'),
+      new Date('2026-06-01T12:00:00.000Z'),
+    );
+    const second = invoiceNumber(
+      'restaurant-1',
+      new Date('2026-06-01T10:00:00.001Z'),
+      new Date('2026-06-01T12:00:00.001Z'),
+    );
+
+    expect(first).not.toBe(second);
+    expect(first.length).toBeLessThanOrEqual(100);
+    expect(second.length).toBeLessThanOrEqual(100);
   });
 });

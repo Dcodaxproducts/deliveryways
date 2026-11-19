@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
@@ -27,6 +28,33 @@ import {
 } from './dto';
 
 class WalletSettlementConflictError extends Error {}
+
+export interface MonthlyPayoutAllocationInput {
+  tenantId: string;
+  restaurantId: string;
+  subscriptionId: string;
+  localMonth: string;
+  timezone: string;
+  currency: string;
+  sourceKey: string;
+  grossCommissionableAmount: Prisma.Decimal;
+  commissionableOrderCount: number;
+  availablePayoutAmount: Prisma.Decimal;
+  availableForMonthlyFeeAmount: Prisma.Decimal;
+  packagePlanId: string;
+  billingModel: PackageBillingModel;
+  commissionType: PackageCommissionType;
+  commissionCapAmount: Prisma.Decimal | null;
+  commissionPercentage: Prisma.Decimal;
+  commissionFixedAmount: Prisma.Decimal;
+  vatPercentage: Prisma.Decimal;
+  monthlyFeeAmount: Prisma.Decimal;
+  snapshotHash: string;
+  expectedCommissionAmount: Prisma.Decimal;
+  expectedMonthlyFeeAmount: Prisma.Decimal;
+  generatedInvoiceId?: string;
+  isSpecialPayout?: boolean;
+}
 
 @Injectable()
 export class PackagePlansRepository {
@@ -751,6 +779,21 @@ export class PackagePlansRepository {
     });
   }
 
+  findFinalizedPayoutInvoice(sourceKey: string) {
+    return this.prisma.generatedInvoice.findFirst({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        status: GeneratedInvoiceStatus.SENT,
+        sourceKey,
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        snapshot: true,
+      },
+    });
+  }
+
   listRestaurantMonthlyPayoutInvoices(
     restaurantId: string,
     monthFrom: Date,
@@ -832,27 +875,7 @@ export class PackagePlansRepository {
     });
   }
 
-  async allocateMonthlyPayout(input: {
-    restaurantId: string;
-    subscriptionId: string;
-    localMonth: string;
-    timezone: string;
-    currency: string;
-    sourceKey: string;
-    grossCommissionableAmount: Prisma.Decimal;
-    commissionableOrderCount: number;
-    availablePayoutAmount: Prisma.Decimal;
-    packagePlanId: string;
-    billingModel: PackageBillingModel;
-    commissionType: PackageCommissionType;
-    commissionCapAmount: Prisma.Decimal | null;
-    commissionPercentage: Prisma.Decimal;
-    commissionFixedAmount: Prisma.Decimal;
-    vatPercentage: Prisma.Decimal;
-    monthlyFeeAmount: Prisma.Decimal;
-    snapshotHash: string;
-    isSpecialPayout?: boolean;
-  }) {
+  async allocateMonthlyPayout(input: MonthlyPayoutAllocationInput) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(
@@ -861,6 +884,20 @@ export class PackagePlansRepository {
               where: { sourceKey: input.sourceKey },
             });
             if (existing) return existing;
+            const subscription = await tx.tenantSubscription.findFirst({
+              where: {
+                id: input.subscriptionId,
+                tenantId: input.tenantId,
+                restaurantId: input.restaurantId,
+                packagePlanId: input.packagePlanId,
+              },
+              select: { id: true },
+            });
+            if (!subscription) {
+              throw new WalletSettlementConflictError(
+                'Payout subscription does not belong to restaurant and tenant',
+              );
+            }
             const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
               where: {
                 restaurantId_subscriptionId_localMonth: {
@@ -870,6 +907,7 @@ export class PackagePlansRepository {
                 },
               },
               create: {
+                tenantId: input.tenantId,
                 restaurantId: input.restaurantId,
                 subscriptionId: input.subscriptionId,
                 localMonth: input.localMonth,
@@ -895,6 +933,12 @@ export class PackagePlansRepository {
               (await tx.restaurantPayoutAllocation.count({
                 where: { ledgerId: ledger.id },
               })) + 1;
+            const feePayoutCount = await tx.restaurantPayoutAllocation.count({
+              where: {
+                ledgerId: ledger.id,
+                monthlyFeeAmount: { gt: 0 },
+              },
+            });
             const commissionAmount = input.isSpecialPayout
               ? new Prisma.Decimal(0)
               : allocateMonthlyCommission({
@@ -909,17 +953,24 @@ export class PackagePlansRepository {
             const monthlyFeeAmount = input.isSpecialPayout
               ? new Prisma.Decimal(0)
               : allocateMonthlyFee({
-                  payoutSequence: sequence,
+                  payoutSequence: feePayoutCount + 1,
                   allocatedBefore: ledger.monthlyFeeAllocatedAmount,
-                  availableAfterOtherDeductions: Prisma.Decimal.max(
-                    input.availablePayoutAmount.minus(commissionAmount),
-                    0,
-                  ),
+                  availableAfterOtherDeductions:
+                    input.availableForMonthlyFeeAmount,
                   monthlyFee: ledger.monthlyFeeAmount,
                 });
+            if (
+              !commissionAmount.equals(input.expectedCommissionAmount) ||
+              !monthlyFeeAmount.equals(input.expectedMonthlyFeeAmount)
+            ) {
+              throw new WalletSettlementConflictError(
+                'Payout invoice totals do not match canonical ledger allocation',
+              );
+            }
             const allocation = await tx.restaurantPayoutAllocation.create({
               data: {
                 ledgerId: ledger.id,
+                generatedInvoiceId: input.generatedInvoiceId,
                 sourceKey: input.sourceKey,
                 sequence,
                 commissionAmount,
@@ -957,6 +1008,337 @@ export class PackagePlansRepository {
     );
   }
 
+  async finalizePayoutInvoice(input: {
+    invoiceNumber: string;
+    sourceKey: string;
+    tenantId: string;
+    restaurantId: string;
+    subscriptionId: string | null;
+    periodFrom: Date;
+    periodTo: Date;
+    currency: string;
+    totalAmount: Prisma.Decimal;
+    snapshot: Prisma.InputJsonValue;
+    actorId: string;
+    lockToken?: string;
+    finalizedAt: Date;
+    recipientEmail?: string;
+    allocations: MonthlyPayoutAllocationInput[];
+  }) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const existing = await tx.generatedInvoice.findUnique({
+              where: {
+                kind_sourceKey: {
+                  kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+                  sourceKey: input.sourceKey,
+                },
+              },
+            });
+            if (existing) {
+              if (input.lockToken) {
+                await tx.restaurantPayoutSchedule.updateMany({
+                  where: {
+                    restaurantId: input.restaurantId,
+                    lockToken: input.lockToken,
+                  },
+                  data: { lockToken: null, lockExpiresAt: null },
+                });
+              }
+              const outbox = await tx.payoutInvoiceEmailOutbox.findUnique({
+                where: { generatedInvoiceId: existing.id },
+              });
+              return { invoice: existing, outbox, created: false };
+            }
+
+            if (input.subscriptionId) {
+              const subscription = await tx.tenantSubscription.findFirst({
+                where: {
+                  id: input.subscriptionId,
+                  tenantId: input.tenantId,
+                  restaurantId: input.restaurantId,
+                },
+                select: { id: true },
+              });
+              if (!subscription) {
+                throw new WalletSettlementConflictError(
+                  'Payout subscription does not belong to restaurant and tenant',
+                );
+              }
+            }
+
+            const invoice = await tx.generatedInvoice.create({
+              data: {
+                invoiceNumber: input.invoiceNumber,
+                kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+                status: GeneratedInvoiceStatus.SENT,
+                tenantId: input.tenantId,
+                restaurantId: input.restaurantId,
+                subscriptionId: input.subscriptionId,
+                sourceKey: input.sourceKey,
+                periodFrom: input.periodFrom,
+                periodTo: input.periodTo,
+                currency: input.currency,
+                totalAmount: input.totalAmount,
+                snapshot: input.snapshot,
+                generatedById: input.actorId,
+              },
+            });
+            await tx.generatedInvoiceEvent.create({
+              data: {
+                generatedInvoiceId: invoice.id,
+                eventType: GeneratedInvoiceEventType.GENERATED,
+                actorId: input.actorId,
+                metadata: {
+                  sourceKey: input.sourceKey,
+                  invoiceNumber: input.invoiceNumber,
+                  finalized: true,
+                },
+              },
+            });
+
+            for (const allocation of input.allocations) {
+              await this.allocateMonthlyPayoutInTransaction(tx, {
+                ...allocation,
+                generatedInvoiceId: invoice.id,
+              });
+            }
+
+            if (input.lockToken) {
+              const schedule = await tx.restaurantPayoutSchedule.updateMany({
+                where: {
+                  restaurantId: input.restaurantId,
+                  tenantId: input.tenantId,
+                  lockToken: input.lockToken,
+                },
+                data: {
+                  lastFinalizedAt: input.finalizedAt,
+                  lockToken: null,
+                  lockExpiresAt: null,
+                },
+              });
+              if (schedule.count !== 1) {
+                throw new WalletSettlementConflictError(
+                  'Payout schedule lock was lost before finalization',
+                );
+              }
+            }
+
+            const outbox = input.recipientEmail
+              ? await tx.payoutInvoiceEmailOutbox.create({
+                  data: {
+                    tenantId: input.tenantId,
+                    restaurantId: input.restaurantId,
+                    generatedInvoiceId: invoice.id,
+                    recipientEmail: input.recipientEmail,
+                    actorId: input.actorId,
+                  },
+                })
+              : null;
+            return { invoice, outbox, created: true };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (attempt < 2 && this.isPrismaError(error, 'P2034')) continue;
+        throw error;
+      }
+    }
+    throw new WalletSettlementConflictError(
+      'Payout invoice changed during finalization',
+    );
+  }
+
+  async claimPayoutInvoiceEmail(generatedInvoiceId: string, claimedAt: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.payoutInvoiceEmailOutbox.updateMany({
+        where: {
+          generatedInvoiceId,
+          claimedAt: null,
+          sentAt: null,
+        },
+        data: {
+          claimedAt,
+          attempts: { increment: 1 },
+          lastError: null,
+        },
+      });
+      if (claimed.count !== 1) return null;
+      return tx.payoutInvoiceEmailOutbox.findUniqueOrThrow({
+        where: { generatedInvoiceId },
+      });
+    });
+  }
+
+  markPayoutInvoiceEmailFailed(outboxId: string, error: string) {
+    return this.prisma.payoutInvoiceEmailOutbox.update({
+      where: { id: outboxId },
+      data: {
+        claimedAt: null,
+        lastError: error.slice(0, 1000),
+      },
+    });
+  }
+
+  markPayoutInvoiceEmailSent(input: {
+    outboxId: string;
+    generatedInvoiceId: string;
+    recipientEmail: string;
+    actorId?: string | null;
+    sentAt: Date;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const marked = await tx.payoutInvoiceEmailOutbox.updateMany({
+        where: {
+          id: input.outboxId,
+          generatedInvoiceId: input.generatedInvoiceId,
+          claimedAt: { not: null },
+          sentAt: null,
+        },
+        data: { sentAt: input.sentAt },
+      });
+      if (marked.count !== 1) return false;
+      await tx.generatedInvoice.update({
+        where: { id: input.generatedInvoiceId },
+        data: {
+          sentCount: { increment: 1 },
+          lastSentAt: input.sentAt,
+          lastSentTo: input.recipientEmail,
+        },
+      });
+      await tx.generatedInvoiceEvent.create({
+        data: {
+          generatedInvoiceId: input.generatedInvoiceId,
+          eventType: GeneratedInvoiceEventType.EMAILED,
+          actorId: input.actorId,
+          recipientEmail: input.recipientEmail,
+          metadata: { outboxId: input.outboxId },
+        },
+      });
+      return true;
+    });
+  }
+
+  private async allocateMonthlyPayoutInTransaction(
+    tx: Prisma.TransactionClient,
+    input: MonthlyPayoutAllocationInput,
+  ) {
+    const existing = await tx.restaurantPayoutAllocation.findUnique({
+      where: { sourceKey: input.sourceKey },
+    });
+    if (existing) return existing;
+    const subscription = await tx.tenantSubscription.findFirst({
+      where: {
+        id: input.subscriptionId,
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        packagePlanId: input.packagePlanId,
+      },
+      select: { id: true },
+    });
+    if (!subscription) {
+      throw new WalletSettlementConflictError(
+        'Payout subscription does not belong to restaurant and tenant',
+      );
+    }
+    const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
+      where: {
+        restaurantId_subscriptionId_localMonth: {
+          restaurantId: input.restaurantId,
+          subscriptionId: input.subscriptionId,
+          localMonth: input.localMonth,
+        },
+      },
+      create: {
+        tenantId: input.tenantId,
+        restaurantId: input.restaurantId,
+        subscriptionId: input.subscriptionId,
+        localMonth: input.localMonth,
+        timezone: input.timezone,
+        currency: input.currency,
+        packagePlanId: input.packagePlanId,
+        billingModel: input.billingModel,
+        commissionType: input.commissionType,
+        commissionPercentage: input.commissionPercentage,
+        commissionFixedAmount: input.commissionFixedAmount,
+        commissionCapAmount: input.commissionCapAmount,
+        vatPercentage: input.vatPercentage,
+        monthlyFeeAmount: input.monthlyFeeAmount,
+        monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
+      },
+      update: {},
+    });
+    if (ledger.finalizedAt) {
+      throw new WalletSettlementConflictError(
+        'Payout month is finalized and immutable',
+      );
+    }
+    const sequence =
+      (await tx.restaurantPayoutAllocation.count({
+        where: { ledgerId: ledger.id },
+      })) + 1;
+    const feePayoutCount = await tx.restaurantPayoutAllocation.count({
+      where: { ledgerId: ledger.id, monthlyFeeAmount: { gt: 0 } },
+    });
+    const commissionAmount = input.isSpecialPayout
+      ? new Prisma.Decimal(0)
+      : allocateMonthlyCommission({
+          grossAmount: input.grossCommissionableAmount,
+          allocatedBefore: ledger.commissionAllocatedAmount,
+          commissionType: ledger.commissionType,
+          capAmount: ledger.commissionCapAmount,
+          percentage: ledger.commissionPercentage,
+          fixedAmount: ledger.commissionFixedAmount,
+          commissionUnits: input.commissionableOrderCount,
+        });
+    const monthlyFeeAmount = input.isSpecialPayout
+      ? new Prisma.Decimal(0)
+      : allocateMonthlyFee({
+          payoutSequence: feePayoutCount + 1,
+          allocatedBefore: ledger.monthlyFeeAllocatedAmount,
+          availableAfterOtherDeductions: input.availableForMonthlyFeeAmount,
+          monthlyFee: ledger.monthlyFeeAmount,
+        });
+    if (
+      !commissionAmount.equals(input.expectedCommissionAmount) ||
+      !monthlyFeeAmount.equals(input.expectedMonthlyFeeAmount)
+    ) {
+      throw new WalletSettlementConflictError(
+        'Payout invoice totals do not match canonical ledger allocation',
+      );
+    }
+    const allocation = await tx.restaurantPayoutAllocation.create({
+      data: {
+        ledgerId: ledger.id,
+        generatedInvoiceId: input.generatedInvoiceId,
+        sourceKey: input.sourceKey,
+        sequence,
+        commissionAmount,
+        monthlyFeeAmount,
+        availablePayoutAmount: input.availablePayoutAmount,
+        isSpecialPayout: input.isSpecialPayout ?? false,
+        snapshotHash: input.snapshotHash,
+      },
+    });
+    const monthlyFeeAllocatedAmount =
+      ledger.monthlyFeeAllocatedAmount.plus(monthlyFeeAmount);
+    await tx.restaurantPayoutMonthlyLedger.update({
+      where: { id: ledger.id },
+      data: {
+        commissionAllocatedAmount:
+          ledger.commissionAllocatedAmount.plus(commissionAmount),
+        monthlyFeeAllocatedAmount,
+        monthlyFeeOutstandingAmount: Prisma.Decimal.max(
+          ledger.monthlyFeeAmount.minus(monthlyFeeAllocatedAmount),
+          0,
+        ),
+      },
+    });
+    return allocation;
+  }
+
   finalizePayoutMonth(input: {
     restaurantId: string;
     subscriptionId: string;
@@ -982,10 +1364,20 @@ export class PackagePlansRepository {
   }) {
     return this.prisma.$transaction(
       async (tx) => {
+        const restaurant = await tx.restaurant.findUnique({
+          where: { id: input.restaurantId },
+          select: { tenantId: true },
+        });
+        if (!restaurant) {
+          throw new WalletSettlementConflictError('Restaurant not found');
+        }
         await tx.restaurantPayoutSchedule.upsert({
           where: { restaurantId: input.restaurantId },
-          create: { restaurantId: input.restaurantId },
-          update: {},
+          create: {
+            restaurantId: input.restaurantId,
+            tenantId: restaurant.tenantId,
+          },
+          update: { tenantId: restaurant.tenantId },
         });
         const claimed = await tx.restaurantPayoutSchedule.updateMany({
           where: {

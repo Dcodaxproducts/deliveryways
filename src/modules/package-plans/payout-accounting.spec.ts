@@ -6,8 +6,12 @@ import {
 import {
   allocateMonthlyCommission,
   allocateMonthlyFee,
+  lastCompletedRestaurantPayoutPeriod,
+  listRestaurantLocalMonths,
   monthlyFeeInstallment,
   nextRestaurantPayoutAt,
+  previousRestaurantPayoutAt,
+  restaurantLocalMonthPeriod,
   toRestaurantLocalMonth,
 } from './payout-accounting';
 
@@ -72,6 +76,17 @@ describe('payout accounting', () => {
     expect([first.toNumber(), second.toNumber(), fifth.toNumber()]).toEqual([
       10, 39.75, 29.75,
     ]);
+  });
+
+  it('uses the first installment when the first payout is on day 20', () => {
+    expect(
+      allocateMonthlyFee({
+        payoutSequence: 1,
+        allocatedBefore: new Prisma.Decimal(0),
+        availableAfterOtherDeductions: new Prisma.Decimal(1000),
+        monthlyFee: new Prisma.Decimal(159),
+      }).toNumber(),
+    ).toBe(39.75);
   });
 
   it('supports fixed commission and an unlimited percentage cap', () => {
@@ -175,6 +190,44 @@ describe('payout accounting', () => {
       ).toISOString(),
     ).toBe('2026-04-01T08:00:00.000Z');
   });
+  it('uses DST-safe restaurant-local month bounds and enumeration', () => {
+    expect(restaurantLocalMonthPeriod('2026-03', 'Europe/Berlin')).toEqual({
+      from: new Date('2026-02-28T23:00:00.000Z'),
+      to: new Date('2026-03-31T22:00:00.000Z'),
+    });
+    expect(
+      listRestaurantLocalMonths(
+        {
+          from: new Date('2026-03-31T21:30:00.000Z'),
+          to: new Date('2026-04-30T22:30:00.000Z'),
+        },
+        'Europe/Berlin',
+      ),
+    ).toEqual(['2026-03', '2026-04', '2026-05']);
+  });
+
+  it('uses a bounded first manual period and local automatic boundaries', () => {
+    const boundary = new Date('2026-03-31T10:00:00.000Z');
+    const from = previousRestaurantPayoutAt(
+      boundary,
+      PackagePayoutCycle.MONTHLY,
+      'Europe/Berlin',
+    );
+    expect(boundary.getTime() - from.getTime()).toBeLessThanOrEqual(
+      31 * 24 * 60 * 60 * 1000,
+    );
+    expect(
+      lastCompletedRestaurantPayoutPeriod(
+        PackagePayoutCycle.WEEKLY,
+        new Date('2026-03-30T12:00:00.000Z'),
+        'Europe/Berlin',
+      ),
+    ).toEqual({
+      from: new Date('2026-03-22T23:00:00.000Z'),
+      to: new Date('2026-03-29T22:00:00.000Z'),
+    });
+  });
+
   it('resets the weekly due date after every manual finalized boundary', () => {
     const firstAutomaticBoundary = new Date('2026-07-08T10:00:00.000Z');
     const firstManualBoundary = new Date('2026-07-12T10:00:00.000Z');

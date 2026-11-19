@@ -36,7 +36,10 @@ function localDateTimeParts(date: Date, timezone: string): LocalDateTimeParts {
   };
 }
 
-function localDateTimeToUtc(parts: LocalDateTimeParts, timezone: string): Date {
+export function localDateTimeToUtc(
+  parts: LocalDateTimeParts,
+  timezone: string,
+): Date {
   const targetAsUtc = Date.UTC(
     parts.year,
     parts.month - 1,
@@ -59,6 +62,155 @@ function localDateTimeToUtc(parts: LocalDateTimeParts, timezone: string): Date {
     candidate = new Date(candidate.getTime() + targetAsUtc - representedAsUtc);
   }
   return candidate;
+}
+
+export function restaurantLocalMonthPeriod(
+  localMonth: string,
+  timezone: string,
+): { from: Date; to: Date } {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(localMonth);
+  if (!match) throw new RangeError('Invalid local payout month');
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  return {
+    from: localDateTimeToUtc(
+      { year, month, day: 1, hour: 0, minute: 0, second: 0 },
+      timezone,
+    ),
+    to: localDateTimeToUtc(
+      {
+        year: nextYear,
+        month: nextMonth,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+      },
+      timezone,
+    ),
+  };
+}
+
+export function listRestaurantLocalMonths(
+  period: { from: Date; to: Date },
+  timezone: string,
+): string[] {
+  if (period.from >= period.to) return [];
+  const first = localDateTimeParts(period.from, timezone);
+  const last = localDateTimeParts(new Date(period.to.getTime() - 1), timezone);
+  const cursor = new Date(Date.UTC(first.year, first.month - 1, 1));
+  const end = new Date(Date.UTC(last.year, last.month - 1, 1));
+  const months: string[] = [];
+
+  while (cursor <= end) {
+    months.push(
+      cursor.getUTCFullYear() +
+        '-' +
+        String(cursor.getUTCMonth() + 1).padStart(2, '0'),
+    );
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return months;
+}
+
+export function previousRestaurantPayoutAt(
+  boundary: Date,
+  payoutCycle: PackagePayoutCycle,
+  timezone: string,
+): Date {
+  const local = localDateTimeParts(boundary, timezone);
+  const localBoundary = new Date(
+    Date.UTC(
+      local.year,
+      local.month - 1,
+      local.day,
+      local.hour,
+      local.minute,
+      local.second,
+    ),
+  );
+  if (payoutCycle === PackagePayoutCycle.MONTHLY) {
+    const originalDay = localBoundary.getUTCDate();
+    localBoundary.setUTCDate(1);
+    localBoundary.setUTCMonth(localBoundary.getUTCMonth() - 1);
+    const lastDay = new Date(
+      Date.UTC(
+        localBoundary.getUTCFullYear(),
+        localBoundary.getUTCMonth() + 1,
+        0,
+      ),
+    ).getUTCDate();
+    localBoundary.setUTCDate(Math.min(originalDay, lastDay));
+  } else {
+    const days =
+      payoutCycle === PackagePayoutCycle.DAILY
+        ? 1
+        : payoutCycle === PackagePayoutCycle.BIWEEKLY
+          ? 14
+          : 7;
+    localBoundary.setUTCDate(localBoundary.getUTCDate() - days);
+  }
+  return localDateTimeToUtc(
+    {
+      year: localBoundary.getUTCFullYear(),
+      month: localBoundary.getUTCMonth() + 1,
+      day: localBoundary.getUTCDate(),
+      hour: localBoundary.getUTCHours(),
+      minute: localBoundary.getUTCMinutes(),
+      second: localBoundary.getUTCSeconds(),
+    },
+    timezone,
+  );
+}
+
+export function lastCompletedRestaurantPayoutPeriod(
+  payoutCycle: PackagePayoutCycle,
+  now: Date,
+  timezone: string,
+): { from: Date; to: Date } {
+  const local = localDateTimeParts(now, timezone);
+  const localMidnight: LocalDateTimeParts = {
+    ...local,
+    hour: 0,
+    minute: 0,
+    second: 0,
+  };
+  let toParts = localMidnight;
+
+  if (payoutCycle === PackagePayoutCycle.MONTHLY) {
+    toParts = { ...localMidnight, day: 1 };
+  } else if (payoutCycle !== PackagePayoutCycle.DAILY) {
+    const localOrdinal = new Date(
+      Date.UTC(local.year, local.month - 1, local.day),
+    );
+    const weekdayFromMonday = (localOrdinal.getUTCDay() + 6) % 7;
+    let daysBack = weekdayFromMonday;
+    if (payoutCycle === PackagePayoutCycle.BIWEEKLY) {
+      const anchor = Date.UTC(1970, 0, 5);
+      const daysSinceAnchor = Math.floor(
+        (localOrdinal.getTime() - anchor) / (24 * 60 * 60 * 1000),
+      );
+      daysBack = ((daysSinceAnchor % 14) + 14) % 14;
+    }
+    const value = new Date(
+      Date.UTC(local.year, local.month - 1, local.day - daysBack),
+    );
+    toParts = {
+      ...localMidnight,
+      year: value.getUTCFullYear(),
+      month: value.getUTCMonth() + 1,
+      day: value.getUTCDate(),
+    };
+  }
+
+  const to = localDateTimeToUtc(toParts, timezone);
+  return {
+    from: previousRestaurantPayoutAt(to, payoutCycle, timezone),
+    to,
+  };
 }
 
 export function nextRestaurantPayoutAt(
