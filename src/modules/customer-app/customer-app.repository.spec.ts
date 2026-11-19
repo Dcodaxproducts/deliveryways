@@ -173,6 +173,68 @@ describe('CustomerAppRepository', () => {
     jest.useRealTimers();
   });
 
+  it('fails closed on a per-cuisine category overflow and keeps scope in the detail query', async () => {
+    const findMany = jest
+      .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()
+      .mockResolvedValue([
+        {
+          id: 'cuisine-1',
+          name: 'Cuisine',
+          _count: { itemLinks: 1 },
+        },
+      ]);
+    const queryRaw = jest
+      .fn<
+        Promise<
+          Array<{
+            cuisineId: string;
+            categoryId: string;
+            rowNumber: bigint;
+          }>
+        >,
+        [Prisma.Sql]
+      >()
+      .mockResolvedValue([
+        {
+          cuisineId: 'cuisine-1',
+          categoryId: 'category-201',
+          rowNumber: 201n,
+        },
+      ]);
+    const repository = new CustomerAppRepository({
+      restaurantMenu: { findMany: jest.fn().mockResolvedValue([]) },
+      cuisine: { findMany, count: jest.fn().mockResolvedValue(1) },
+      $queryRaw: queryRaw,
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.listCuisineCategories(
+        {
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+          page: 1,
+          limit: 8,
+          sortBy: 'sortOrder',
+          sortOrder: 'ASC',
+        },
+        { categoryIds: ['promotion-category'] },
+      ),
+    ).rejects.toThrow('Cuisine category detail limit exceeded');
+
+    const cuisineQuery = findMany.mock.calls[0]?.[0];
+    expect(JSON.stringify(cuisineQuery?.include)).toContain(
+      'promotion-category',
+    );
+    const sqlQuery = queryRaw.mock.calls[0]?.[0] as unknown as {
+      strings: string[];
+      values: unknown[];
+    };
+    const sql = sqlQuery.strings.join(' ');
+    expect(sql).toContain('ROW_NUMBER() OVER');
+    expect(sqlQuery.values).toContain('promotion-category');
+    expect(sql).toContain('restaurant_menu_items');
+  });
+
   it('counts only active, non-deleted restaurant branches', async () => {
     const count = jest.fn().mockResolvedValue(1);
     const repository = new CustomerAppRepository({

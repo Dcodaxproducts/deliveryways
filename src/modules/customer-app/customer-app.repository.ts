@@ -1368,6 +1368,18 @@ export class CustomerAppRepository {
       restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
+      category: {
+        deletedAt: null,
+        isActive: true,
+        ...(branchId
+          ? {
+              OR: [
+                { overrides: { none: { branchId } } },
+                { overrides: { some: { branchId, isVisible: true } } },
+              ],
+            }
+          : {}),
+      },
       ...(branchId
         ? {
             OR: [
@@ -1391,7 +1403,25 @@ export class CustomerAppRepository {
               { categoryId: { in: categoryIds } },
               {
                 categoryLinks: {
-                  some: { menuCategoryId: { in: categoryIds } },
+                  some: {
+                    menuCategoryId: { in: categoryIds },
+                    menuCategory: {
+                      deletedAt: null,
+                      isActive: true,
+                      ...(branchId
+                        ? {
+                            OR: [
+                              { overrides: { none: { branchId } } },
+                              {
+                                overrides: {
+                                  some: { branchId, isVisible: true },
+                                },
+                              },
+                            ],
+                          }
+                        : {}),
+                    },
+                  },
                 },
               },
             ],
@@ -1419,7 +1449,11 @@ export class CustomerAppRepository {
           _count: {
             select: {
               itemLinks: {
-                where: { menuItem: itemVisibilityWhere },
+                where: {
+                  menuItem: scopedCategoryWhere
+                    ? { AND: [itemVisibilityWhere, scopedCategoryWhere] }
+                    : itemVisibilityWhere,
+                },
               },
             },
           },
@@ -1431,6 +1465,8 @@ export class CustomerAppRepository {
       items.map((item) => item.id),
       query.restaurantId,
       branchId,
+      availableMenuIds,
+      categoryIds,
     );
 
     return {
@@ -1446,15 +1482,15 @@ export class CustomerAppRepository {
   private async loadCuisineCategoryIds(
     cuisineIds: string[],
     restaurantId: string,
-    branchId?: string,
+    branchId: string | undefined,
+    availableMenuIds: string[],
+    scopedCategoryIds: string[],
   ): Promise<Map<string, string[]>> {
     if (!cuisineIds.length) {
       return new Map();
     }
 
-    const rowLimit =
-      cuisineIds.length * PUBLIC_CUISINE_CATEGORY_LIMIT_PER_CUISINE;
-    const branchVisibility = branchId
+    const branchItemVisibility = branchId
       ? Prisma.sql`AND (
           NOT EXISTS (
             SELECT 1 FROM branch_menu_item_overrides bmio
@@ -1468,31 +1504,100 @@ export class CustomerAppRepository {
           )
         )`
       : Prisma.empty;
+    const branchCategoryVisibility = branchId
+      ? Prisma.sql`AND (
+          NOT EXISTS (
+            SELECT 1 FROM branch_category_overrides bmco
+            WHERE bmco.menu_category_id = category_ids.category_id
+              AND bmco.branch_id = ${branchId}
+          )
+          OR EXISTS (
+            SELECT 1 FROM branch_category_overrides bmco
+            WHERE bmco.menu_category_id = category_ids.category_id
+              AND bmco.branch_id = ${branchId}
+              AND bmco.is_visible = true
+          )
+        )`
+      : Prisma.empty;
+    const categoryScope = scopedCategoryIds.length
+      ? Prisma.sql`AND category_ids.category_id IN (${Prisma.join(scopedCategoryIds)})`
+      : Prisma.empty;
+    const scheduleVisibility = availableMenuIds.length
+      ? Prisma.sql`AND (
+          (
+            NOT EXISTS (SELECT 1 FROM restaurant_menu_items rmi WHERE rmi.menu_item_id = mi.id)
+            AND NOT EXISTS (SELECT 1 FROM restaurant_menu_categories rmc WHERE rmc.menu_category_id = mi.category_id)
+            AND NOT EXISTS (
+              SELECT 1 FROM menu_item_categories micat_schedule
+              JOIN restaurant_menu_categories rmc ON rmc.menu_category_id = micat_schedule.menu_category_id
+              WHERE micat_schedule.menu_item_id = mi.id
+            )
+          )
+          OR EXISTS (
+            SELECT 1 FROM restaurant_menu_items rmi
+            WHERE rmi.menu_item_id = mi.id AND rmi.is_active = true
+              AND rmi.restaurant_menu_id IN (${Prisma.join(availableMenuIds)})
+          )
+          OR EXISTS (
+            SELECT 1 FROM restaurant_menu_categories rmc
+            WHERE rmc.menu_category_id = mi.category_id
+              AND rmc.restaurant_menu_id IN (${Prisma.join(availableMenuIds)})
+          )
+          OR EXISTS (
+            SELECT 1 FROM menu_item_categories micat_schedule
+            JOIN restaurant_menu_categories rmc ON rmc.menu_category_id = micat_schedule.menu_category_id
+            WHERE micat_schedule.menu_item_id = mi.id
+              AND rmc.restaurant_menu_id IN (${Prisma.join(availableMenuIds)})
+          )
+        )`
+      : Prisma.sql`AND (
+          NOT EXISTS (SELECT 1 FROM restaurant_menu_items rmi WHERE rmi.menu_item_id = mi.id)
+          AND NOT EXISTS (SELECT 1 FROM restaurant_menu_categories rmc WHERE rmc.menu_category_id = mi.category_id)
+          AND NOT EXISTS (
+            SELECT 1 FROM menu_item_categories micat_schedule
+            JOIN restaurant_menu_categories rmc ON rmc.menu_category_id = micat_schedule.menu_category_id
+            WHERE micat_schedule.menu_item_id = mi.id
+          )
+        )`;
     const rows = await this.prisma.$queryRaw<
-      Array<{ cuisineId: string; categoryId: string }>
+      Array<{ cuisineId: string; categoryId: string; rowNumber: bigint }>
     >(Prisma.sql`
-      SELECT DISTINCT
-        mic.cuisine_id AS "cuisineId",
-        category_ids.category_id AS "categoryId"
-      FROM menu_item_cuisines mic
-      JOIN menu_items mi ON mi.id = mic.menu_item_id
-      CROSS JOIN LATERAL (
-        SELECT mi.category_id
-        UNION
-        SELECT micat.menu_category_id
-        FROM menu_item_categories micat
-        WHERE micat.menu_item_id = mi.id
-      ) category_ids
-      WHERE mic.cuisine_id IN (${Prisma.join(cuisineIds)})
-        AND mi.restaurant_id = ${restaurantId}
-        AND mi.deleted_at IS NULL
-        AND mi.is_active = true
-        ${branchVisibility}
-      ORDER BY mic.cuisine_id, category_ids.category_id
-      LIMIT ${rowLimit + 1}
+      WITH visible_categories AS (
+        SELECT DISTINCT mic.cuisine_id AS "cuisineId", category_ids.category_id AS "categoryId"
+        FROM menu_item_cuisines mic
+        JOIN menu_items mi ON mi.id = mic.menu_item_id
+        CROSS JOIN LATERAL (
+          SELECT mi.category_id
+          UNION
+          SELECT micat.menu_category_id FROM menu_item_categories micat
+          WHERE micat.menu_item_id = mi.id
+        ) category_ids
+        JOIN menu_categories mc ON mc.id = category_ids.category_id
+        WHERE mic.cuisine_id IN (${Prisma.join(cuisineIds)})
+          AND mi.restaurant_id = ${restaurantId}
+          AND mi.deleted_at IS NULL AND mi.is_active = true
+          AND mc.deleted_at IS NULL AND mc.is_active = true
+          ${branchItemVisibility}
+          ${branchCategoryVisibility}
+          ${categoryScope}
+          ${scheduleVisibility}
+      ), ranked_categories AS (
+        SELECT "cuisineId", "categoryId",
+          ROW_NUMBER() OVER (PARTITION BY "cuisineId" ORDER BY "categoryId") AS "rowNumber"
+        FROM visible_categories
+      )
+      SELECT "cuisineId", "categoryId", "rowNumber"
+      FROM ranked_categories
+      WHERE "rowNumber" <= ${PUBLIC_CUISINE_CATEGORY_LIMIT_PER_CUISINE + 1}
+      ORDER BY "cuisineId", "rowNumber"
     `);
 
-    if (rows.length > rowLimit) {
+    if (
+      rows.some(
+        (row) =>
+          Number(row.rowNumber) > PUBLIC_CUISINE_CATEGORY_LIMIT_PER_CUISINE,
+      )
+    ) {
       throw new ServiceUnavailableException(
         'Cuisine category detail limit exceeded',
       );
