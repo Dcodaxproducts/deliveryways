@@ -2390,28 +2390,28 @@ model RestaurantPayoutSchedule {
 }
 
 model PayoutInvoiceEmailOutbox {
-  id                 String    @id @default(cuid())
-  tenantId           String    @map("tenant_id")
-  restaurantId       String    @map("restaurant_id")
-  generatedInvoiceId String    @unique @map("generated_invoice_id")
-  recipientEmail     String    @map("recipient_email") @db.VarChar(320)
-  actorId            String?   @map("actor_id")
-  deliveryState      String    @default("PENDING") @map("delivery_state") @db.VarChar(24)
-  providerMessageKey String    @unique @map("provider_message_key") @db.VarChar(255)
-  claimedAt          DateTime? @map("claimed_at") @db.Timestamptz
-  claimToken         String?   @unique @map("claim_token") @db.VarChar(64)
-  claimExpiresAt     DateTime? @map("claim_expires_at") @db.Timestamptz
-  nextAttemptAt      DateTime? @map("next_attempt_at") @db.Timestamptz
-  providerAcceptedAt DateTime? @map("provider_accepted_at") @db.Timestamptz
+  id                       String    @id @default(cuid())
+  tenantId                 String    @map("tenant_id")
+  restaurantId             String    @map("restaurant_id")
+  generatedInvoiceId       String    @unique @map("generated_invoice_id")
+  recipientEmail           String    @map("recipient_email") @db.VarChar(320)
+  actorId                  String?   @map("actor_id")
+  deliveryState            String    @default("PENDING") @map("delivery_state") @db.VarChar(24)
+  providerMessageKey       String    @unique @map("provider_message_key") @db.VarChar(255)
+  claimedAt                DateTime? @map("claimed_at") @db.Timestamptz
+  claimToken               String?   @unique @map("claim_token") @db.VarChar(64)
+  claimExpiresAt           DateTime? @map("claim_expires_at") @db.Timestamptz
+  nextAttemptAt            DateTime? @map("next_attempt_at") @db.Timestamptz
+  providerAcceptedAt       DateTime? @map("provider_accepted_at") @db.Timestamptz
   reconciliationRequiredAt DateTime? @map("reconciliation_required_at") @db.Timestamptz
-  reconciledAt       DateTime? @map("reconciled_at") @db.Timestamptz
-  reconciledBy       String?   @map("reconciled_by")
-  reconciliationNote String?   @map("reconciliation_note") @db.VarChar(1000)
-  sentAt             DateTime? @map("sent_at") @db.Timestamptz
-  attempts           Int       @default(0)
-  lastError          String?   @map("last_error") @db.VarChar(1000)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  reconciledAt             DateTime? @map("reconciled_at") @db.Timestamptz
+  reconciledBy             String?   @map("reconciled_by")
+  reconciliationNote       String?   @map("reconciliation_note") @db.VarChar(1000)
+  sentAt                   DateTime? @map("sent_at") @db.Timestamptz
+  attempts                 Int       @default(0)
+  lastError                String?   @map("last_error") @db.VarChar(1000)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant           Tenant           @relation("PayoutOutboxTenant", fields: [tenantId], references: [id], onDelete: Restrict)
   restaurant       Restaurant       @relation("PayoutOutboxRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
