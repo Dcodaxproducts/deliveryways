@@ -19,9 +19,14 @@ export class PackagePlansInvoiceAutomationService {
     const subscriptions =
       await this.packagePlansService.emailDueSubscriptionInvoices(now);
 
-    if (retries.sent > 0 || retries.failed > 0) {
+    if (
+      retries.sent > 0 ||
+      retries.failed > 0 ||
+      retries.unknown > 0 ||
+      retries.recovered > 0
+    ) {
       this.logger.log(
-        `Payout email outbox: sent=${retries.sent}, failed=${retries.failed}, skipped=${retries.skipped}`,
+        `Payout email outbox: sent=${retries.sent}, failed=${retries.failed}, skipped=${retries.skipped}, unknown=${retries.unknown}, recovered=${retries.recovered}`,
       );
     }
     if (payouts.sent > 0) {

@@ -2403,6 +2403,10 @@ model PayoutInvoiceEmailOutbox {
   claimExpiresAt     DateTime? @map("claim_expires_at") @db.Timestamptz
   nextAttemptAt      DateTime? @map("next_attempt_at") @db.Timestamptz
   providerAcceptedAt DateTime? @map("provider_accepted_at") @db.Timestamptz
+  reconciliationRequiredAt DateTime? @map("reconciliation_required_at") @db.Timestamptz
+  reconciledAt       DateTime? @map("reconciled_at") @db.Timestamptz
+  reconciledBy       String?   @map("reconciled_by")
+  reconciliationNote String?   @map("reconciliation_note") @db.VarChar(1000)
   sentAt             DateTime? @map("sent_at") @db.Timestamptz
   attempts           Int       @default(0)
   lastError          String?   @map("last_error") @db.VarChar(1000)
@@ -2413,7 +2417,7 @@ model PayoutInvoiceEmailOutbox {
   restaurant       Restaurant       @relation("PayoutOutboxRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
   generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
 
-  @@index([sentAt, nextAttemptAt, claimExpiresAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
+  @@index([deliveryState, nextAttemptAt, claimExpiresAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
   @@map("payout_invoice_email_outbox")
 }
 

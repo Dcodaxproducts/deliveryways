@@ -42,6 +42,8 @@ import {
   ListSubscriptionDeductionsDto,
   ListTenantSubscriptionsDto,
   MonthlyInvoiceDatevExportQueryDto,
+  PayoutInvoiceEmailReconciliationAction,
+  ReconcilePayoutInvoiceEmailDto,
   SendTenantSubscriptionInvoiceDto,
   SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
@@ -1170,26 +1172,24 @@ export class PackagePlansService {
     });
     const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
 
-    if (!recipientEmail || !this.mailerService) {
+    if (!recipientEmail) {
       if (supportsScheduleLock) {
         await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
           dto.restaurantId,
           lockToken,
         );
       }
-      if (!recipientEmail) {
-        throw new BadRequestException(
-          'Restaurant billing email is required to send payout invoice',
-        );
-      }
-      throw new InternalServerErrorException(
-        'Mailer service is not configured',
+      throw new BadRequestException(
+        'Restaurant billing email is required to send payout invoice',
       );
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
+    let finalized: Awaited<
+      ReturnType<PackagePlansService['persistWeeklyPayoutInvoice']>
+    >;
     try {
-      const finalized = await this.persistWeeklyPayoutInvoice(user, invoice, {
+      finalized = await this.persistWeeklyPayoutInvoice(user, invoice, {
         status: GeneratedInvoiceStatus.SENT,
         recipientEmail,
         lockToken: supportsScheduleLock ? lockToken : undefined,
@@ -1200,15 +1200,6 @@ export class PackagePlansService {
           'Payout invoice persistence is not configured',
         );
       }
-      const finalizedInvoice = this.hydrateStoredPayoutInvoiceSnapshot(
-        finalized.invoice.snapshot,
-      );
-      await this.deliverWeeklyPayoutInvoice(
-        user,
-        finalizedInvoice,
-        recipientEmail,
-        finalized.invoice.id,
-      );
     } catch (error) {
       if (supportsScheduleLock) {
         await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
@@ -1219,6 +1210,23 @@ export class PackagePlansService {
       throw error;
     }
 
+    const finalizedInvoice = this.hydrateStoredPayoutInvoiceSnapshot(
+      finalized.invoice.snapshot,
+    );
+    let emailDeliveryState = this.mailerService ? 'SENT' : 'PENDING';
+    if (this.mailerService) {
+      try {
+        await this.deliverWeeklyPayoutInvoice(
+          user,
+          finalizedInvoice,
+          recipientEmail,
+          finalized.invoice.id,
+        );
+      } catch {
+        emailDeliveryState = 'UNKNOWN';
+      }
+    }
+
     return {
       data: {
         invoiceNumber: invoice.invoiceNumber,
@@ -1226,8 +1234,14 @@ export class PackagePlansService {
         sentTo: recipientEmail,
         fileName,
         mimeType: 'application/pdf',
+        emailDeliveryState,
       },
-      message: 'Payout invoice generated and sent successfully',
+      message:
+        emailDeliveryState === 'SENT'
+          ? 'Payout invoice finalized and sent successfully'
+          : emailDeliveryState === 'PENDING'
+            ? 'Payout invoice finalized; email delivery remains pending'
+            : 'Payout invoice finalized; email delivery requires reconciliation',
     };
   }
 
@@ -1561,13 +1575,84 @@ export class PackagePlansService {
     }
   }
 
+  async listPayoutInvoiceEmailReconciliations(user: AuthUserContext) {
+    this.ensureSuperAdmin(user);
+    const items =
+      await this.packagePlansRepository.listPayoutInvoiceEmailsRequiringReconciliation(
+        100,
+      );
+    return { data: items, meta: { limit: 100 } };
+  }
+
+  async reconcilePayoutInvoiceEmail(
+    user: AuthUserContext,
+    generatedInvoiceId: string,
+    dto: ReconcilePayoutInvoiceEmailDto,
+  ) {
+    this.ensureSuperAdmin(user);
+    const reconciled =
+      await this.packagePlansRepository.reconcilePayoutInvoiceEmail({
+        generatedInvoiceId,
+        action: dto.action,
+        actorId: user.uid,
+        reconciledAt: new Date(),
+        note: dto.note,
+      });
+    if (!reconciled) {
+      throw new BadRequestException(
+        'Payout email is not awaiting reconciliation or was already reconciled',
+      );
+    }
+
+    if (dto.action === PayoutInvoiceEmailReconciliationAction.RESEND) {
+      const invoice = this.hydrateStoredPayoutInvoiceSnapshot(
+        reconciled.generatedInvoice.snapshot,
+      );
+      const sent = await this.deliverWeeklyPayoutInvoice(
+        user,
+        invoice,
+        reconciled.recipientEmail,
+        generatedInvoiceId,
+      );
+      if (!sent) {
+        throw new BadRequestException(
+          'Payout email resend was claimed by another worker',
+        );
+      }
+    }
+
+    return {
+      data: {
+        generatedInvoiceId,
+        action: dto.action,
+        deliveryState:
+          dto.action === PayoutInvoiceEmailReconciliationAction.DELIVERED ||
+          dto.action === PayoutInvoiceEmailReconciliationAction.RESEND
+            ? 'SENT'
+            : 'RETRY_WAIT',
+        providerMessageKey: reconciled.providerMessageKey,
+      },
+    };
+  }
+
   async retryDuePayoutInvoiceEmails(now = new Date()) {
     this.ensureInvoiceAutomationConfigured();
+    const reconciled =
+      await this.packagePlansRepository.reconcileExpiredPayoutInvoiceEmailClaims(
+        now,
+        100,
+      );
     const due = await this.packagePlansRepository.listDuePayoutInvoiceEmails(
       now,
       100,
     );
-    const results = { sent: 0, failed: 0, skipped: 0 };
+    const results = {
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      unknown: reconciled.unknown,
+      recovered: reconciled.retryable,
+    };
     const systemUser = this.systemInvoiceUser();
 
     for (const item of due) {
@@ -3969,10 +4054,40 @@ export class PackagePlansService {
     );
     if (!claimed || !claimed.claimToken) return false;
     const deliveryRecipient = claimed.recipientEmail;
+    let fileName: string;
+    let content: Buffer;
 
     try {
-      const fileName = `${invoice.invoiceNumber}.pdf`;
-      const content = this.generateWeeklyPayoutInvoicePdf(invoice);
+      fileName = `${invoice.invoiceNumber}.pdf`;
+      content = this.generateWeeklyPayoutInvoicePdf(invoice);
+    } catch (error) {
+      await this.packagePlansRepository.markPayoutInvoiceEmailFailed({
+        outboxId: claimed.id,
+        claimToken: claimed.claimToken,
+        attempts: claimed.attempts,
+        failedAt: new Date(),
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Email preparation failed before SMTP send',
+      });
+      throw error;
+    }
+
+    const startedAt = new Date();
+    const sending =
+      await this.packagePlansRepository.markPayoutInvoiceEmailSending({
+        outboxId: claimed.id,
+        claimToken: claimed.claimToken,
+        startedAt,
+      });
+    if (sending.count !== 1) {
+      throw new Error(
+        'Payout email preparation lease expired before SMTP send',
+      );
+    }
+
+    try {
       await this.mailerService.sendEmail(
         deliveryRecipient,
         `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
@@ -3988,6 +4103,7 @@ export class PackagePlansService {
           messageId: `<${claimed.providerMessageKey}>`,
         },
       );
+      const sentAt = new Date();
       const markedSent =
         await this.packagePlansRepository.markPayoutInvoiceEmailSent({
           outboxId: claimed.id,
@@ -3996,21 +4112,30 @@ export class PackagePlansService {
           actorId: user.uid,
           claimToken: claimed.claimToken,
           providerMessageKey: claimed.providerMessageKey,
-          sentAt: new Date(),
+          sentAt,
         });
       if (!markedSent) {
+        await this.packagePlansRepository.markPayoutInvoiceEmailUnknown({
+          outboxId: claimed.id,
+          claimToken: claimed.claimToken,
+          detectedAt: sentAt,
+          error:
+            'SMTP accepted the message but the accepted outcome could not be recorded',
+        });
         throw new Error(
-          'Payout email lease expired before delivery was recorded',
+          'Payout email delivery requires reconciliation before any resend',
         );
       }
       return true;
     } catch (error) {
-      await this.packagePlansRepository.markPayoutInvoiceEmailFailed({
+      await this.packagePlansRepository.markPayoutInvoiceEmailUnknown({
         outboxId: claimed.id,
         claimToken: claimed.claimToken,
-        attempts: claimed.attempts,
-        failedAt: new Date(),
-        error: error instanceof Error ? error.message : 'Email delivery failed',
+        detectedAt: new Date(),
+        error:
+          error instanceof Error
+            ? error.message
+            : 'SMTP delivery outcome is unknown',
       });
       throw error;
     }
