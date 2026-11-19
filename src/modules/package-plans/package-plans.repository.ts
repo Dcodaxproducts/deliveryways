@@ -787,15 +787,10 @@ export class PackagePlansRepository {
     return this.prisma.payoutInvoiceEmailOutbox.findMany({
       where: {
         sentAt: null,
-        deliveryState: { not: 'FAILED' },
-        OR: [
-          { deliveryState: 'SENDING', claimExpiresAt: { lte: now } },
-          {
-            claimToken: null,
-            attempts: { lt: 8 },
-            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-          },
-        ],
+        deliveryState: { in: ['PENDING', 'RETRY_WAIT'] },
+        claimToken: null,
+        attempts: { lt: 8 },
+        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
       },
       take,
       orderBy: [{ nextAttemptAt: 'asc' }, { createdAt: 'asc' }],
@@ -922,6 +917,37 @@ export class PackagePlansRepository {
                 'Payout subscription does not belong to restaurant and tenant',
               );
             }
+            const existingLedger =
+              await tx.restaurantPayoutMonthlyLedger.findUnique({
+                where: {
+                  restaurantId_subscriptionId_localMonth: {
+                    restaurantId: input.restaurantId,
+                    subscriptionId: input.subscriptionId,
+                    localMonth: input.localMonth,
+                  },
+                },
+                select: {
+                  commissionAllocatedAmount: true,
+                  monthlyFeeAllocatedAmount: true,
+                },
+              });
+            const effectiveCommissionCapAmount =
+              input.commissionCapAmount === null
+                ? null
+                : Prisma.Decimal.max(
+                    input.commissionCapAmount,
+                    existingLedger?.commissionAllocatedAmount ?? 0,
+                  );
+            const effectiveMonthlyFeeAmount = Prisma.Decimal.max(
+              input.monthlyFeeAmount,
+              existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+            );
+            const effectiveMonthlyFeeOutstandingAmount = Prisma.Decimal.max(
+              effectiveMonthlyFeeAmount.minus(
+                existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+              ),
+              0,
+            );
             const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
               where: {
                 restaurantId_subscriptionId_localMonth: {
@@ -942,12 +968,12 @@ export class PackagePlansRepository {
                 commissionType: input.commissionType,
                 commissionPercentage: input.commissionPercentage,
                 commissionFixedAmount: input.commissionFixedAmount,
-                commissionCapAmount: input.commissionCapAmount,
+                commissionCapAmount: effectiveCommissionCapAmount,
                 vatPercentage: input.vatPercentage,
-                monthlyFeeAmount: input.monthlyFeeAmount,
+                monthlyFeeAmount: effectiveMonthlyFeeAmount,
                 payoutCycle: input.payoutCycle,
                 payoutOpportunities: input.payoutOpportunities,
-                monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
+                monthlyFeeOutstandingAmount: effectiveMonthlyFeeAmount,
               },
               update: {
                 packagePlanId: input.packagePlanId,
@@ -955,11 +981,13 @@ export class PackagePlansRepository {
                 commissionType: input.commissionType,
                 commissionPercentage: input.commissionPercentage,
                 commissionFixedAmount: input.commissionFixedAmount,
-                commissionCapAmount: input.commissionCapAmount,
+                commissionCapAmount: effectiveCommissionCapAmount,
                 vatPercentage: input.vatPercentage,
-                monthlyFeeAmount: input.monthlyFeeAmount,
+                monthlyFeeAmount: effectiveMonthlyFeeAmount,
                 payoutCycle: input.payoutCycle,
                 payoutOpportunities: input.payoutOpportunities,
+                monthlyFeeOutstandingAmount:
+                  effectiveMonthlyFeeOutstandingAmount,
               },
             });
             if (ledger.finalizedAt)
@@ -1198,24 +1226,13 @@ export class PackagePlansRepository {
         where: {
           generatedInvoiceId,
           sentAt: null,
-          deliveryState: { not: 'FAILED' },
-          OR: [
-            {
-              deliveryState: 'SENDING',
-              claimExpiresAt: { lte: claimedAt },
-            },
-            {
-              claimToken: null,
-              attempts: { lt: 8 },
-              OR: [
-                { nextAttemptAt: null },
-                { nextAttemptAt: { lte: claimedAt } },
-              ],
-            },
-          ],
+          deliveryState: { in: ['PENDING', 'RETRY_WAIT'] },
+          claimToken: null,
+          attempts: { lt: 8 },
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: claimedAt } }],
         },
         data: {
-          deliveryState: 'SENDING',
+          deliveryState: 'PREPARING',
           claimedAt,
           claimToken,
           claimExpiresAt,
@@ -1227,6 +1244,23 @@ export class PackagePlansRepository {
       return tx.payoutInvoiceEmailOutbox.findUniqueOrThrow({
         where: { generatedInvoiceId },
       });
+    });
+  }
+
+  markPayoutInvoiceEmailSending(input: {
+    outboxId: string;
+    claimToken: string;
+    startedAt: Date;
+  }) {
+    return this.prisma.payoutInvoiceEmailOutbox.updateMany({
+      where: {
+        id: input.outboxId,
+        claimToken: input.claimToken,
+        deliveryState: 'PREPARING',
+        claimExpiresAt: { gt: input.startedAt },
+        sentAt: null,
+      },
+      data: { deliveryState: 'SENDING' },
     });
   }
 
@@ -1245,6 +1279,7 @@ export class PackagePlansRepository {
       where: {
         id: input.outboxId,
         claimToken: input.claimToken,
+        deliveryState: 'PREPARING',
         sentAt: null,
       },
       data: {
@@ -1258,6 +1293,95 @@ export class PackagePlansRepository {
             : new Date(input.failedAt.getTime() + backoffSeconds * 1000),
         lastError: input.error.slice(0, 1000),
       },
+    });
+  }
+
+  markPayoutInvoiceEmailUnknown(input: {
+    outboxId: string;
+    claimToken: string;
+    detectedAt: Date;
+    error: string;
+  }) {
+    return this.prisma.payoutInvoiceEmailOutbox.updateMany({
+      where: {
+        id: input.outboxId,
+        claimToken: input.claimToken,
+        deliveryState: 'SENDING',
+        sentAt: null,
+      },
+      data: {
+        deliveryState: 'UNKNOWN',
+        claimedAt: null,
+        claimToken: null,
+        claimExpiresAt: null,
+        nextAttemptAt: null,
+        reconciliationRequiredAt: input.detectedAt,
+        reconciledAt: null,
+        reconciledBy: null,
+        reconciliationNote: null,
+        lastError: input.error.slice(0, 1000),
+      },
+    });
+  }
+
+  async reconcileExpiredPayoutInvoiceEmailClaims(now: Date, take = 100) {
+    return this.prisma.$transaction(async (tx) => {
+      const expired = await tx.payoutInvoiceEmailOutbox.findMany({
+        where: {
+          deliveryState: { in: ['PREPARING', 'SENDING'] },
+          claimExpiresAt: { lte: now },
+          sentAt: null,
+        },
+        select: { id: true, deliveryState: true },
+        orderBy: { claimExpiresAt: 'asc' },
+        take,
+      });
+      const preparingIds = expired
+        .filter((item) => item.deliveryState === 'PREPARING')
+        .map((item) => item.id);
+      const sendingIds = expired
+        .filter((item) => item.deliveryState === 'SENDING')
+        .map((item) => item.id);
+      const retryable = preparingIds.length
+        ? await tx.payoutInvoiceEmailOutbox.updateMany({
+            where: {
+              id: { in: preparingIds },
+              deliveryState: 'PREPARING',
+              claimExpiresAt: { lte: now },
+            },
+            data: {
+              deliveryState: 'RETRY_WAIT',
+              claimedAt: null,
+              claimToken: null,
+              claimExpiresAt: null,
+              nextAttemptAt: now,
+              lastError: 'Email preparation claim expired before SMTP send',
+            },
+          })
+        : { count: 0 };
+      const unknown = sendingIds.length
+        ? await tx.payoutInvoiceEmailOutbox.updateMany({
+            where: {
+              id: { in: sendingIds },
+              deliveryState: 'SENDING',
+              claimExpiresAt: { lte: now },
+            },
+            data: {
+              deliveryState: 'UNKNOWN',
+              claimedAt: null,
+              claimToken: null,
+              claimExpiresAt: null,
+              nextAttemptAt: null,
+              reconciliationRequiredAt: now,
+              reconciledAt: null,
+              reconciledBy: null,
+              reconciliationNote: null,
+              lastError:
+                'SMTP outcome is unknown after an expired delivery claim; automatic resend is blocked',
+            },
+          })
+        : { count: 0 };
+      return { retryable: retryable.count, unknown: unknown.count };
     });
   }
 
@@ -1276,7 +1400,7 @@ export class PackagePlansRepository {
           id: input.outboxId,
           generatedInvoiceId: input.generatedInvoiceId,
           claimToken: input.claimToken,
-          claimExpiresAt: { gt: input.sentAt },
+          deliveryState: 'SENDING',
           sentAt: null,
         },
         data: {
@@ -1286,6 +1410,7 @@ export class PackagePlansRepository {
           claimToken: null,
           claimExpiresAt: null,
           nextAttemptAt: null,
+          reconciliationRequiredAt: null,
         },
       });
       if (marked.count !== 1) return false;
@@ -1313,6 +1438,106 @@ export class PackagePlansRepository {
     });
   }
 
+  listPayoutInvoiceEmailsRequiringReconciliation(take = 100) {
+    return this.prisma.payoutInvoiceEmailOutbox.findMany({
+      where: { deliveryState: 'UNKNOWN' },
+      take,
+      orderBy: [{ reconciliationRequiredAt: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        generatedInvoiceId: true,
+        recipientEmail: true,
+        providerMessageKey: true,
+        attempts: true,
+        lastError: true,
+        reconciliationRequiredAt: true,
+      },
+    });
+  }
+
+  async reconcilePayoutInvoiceEmail(input: {
+    generatedInvoiceId: string;
+    action: 'DELIVERED' | 'NOT_DELIVERED' | 'RESEND';
+    actorId: string;
+    reconciledAt: Date;
+    note?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.payoutInvoiceEmailOutbox.findUnique({
+        where: { generatedInvoiceId: input.generatedInvoiceId },
+        include: {
+          generatedInvoice: { select: { id: true, snapshot: true } },
+        },
+      });
+      if (!current || current.deliveryState !== 'UNKNOWN') return null;
+
+      const delivered = input.action === 'DELIVERED';
+      const updated = await tx.payoutInvoiceEmailOutbox.updateMany({
+        where: {
+          id: current.id,
+          deliveryState: 'UNKNOWN',
+          sentAt: null,
+        },
+        data: delivered
+          ? {
+              deliveryState: 'SENT',
+              providerAcceptedAt: input.reconciledAt,
+              sentAt: input.reconciledAt,
+              reconciliationRequiredAt: null,
+              reconciledAt: input.reconciledAt,
+              reconciledBy: input.actorId,
+              reconciliationNote: input.note?.slice(0, 1000),
+              lastError: null,
+            }
+          : {
+              deliveryState: 'RETRY_WAIT',
+              nextAttemptAt: input.reconciledAt,
+              reconciliationRequiredAt: null,
+              reconciledAt: input.reconciledAt,
+              reconciledBy: input.actorId,
+              reconciliationNote: input.note?.slice(0, 1000),
+              lastError:
+                input.action === 'RESEND'
+                  ? 'Operator approved an immediate resend after reconciliation'
+                  : 'Operator confirmed that the prior SMTP attempt was not delivered',
+            },
+      });
+      if (updated.count !== 1) return null;
+
+      if (delivered) {
+        await tx.generatedInvoice.update({
+          where: { id: input.generatedInvoiceId },
+          data: {
+            sentCount: { increment: 1 },
+            lastSentAt: input.reconciledAt,
+            lastSentTo: current.recipientEmail,
+          },
+        });
+        await tx.generatedInvoiceEvent.create({
+          data: {
+            generatedInvoiceId: input.generatedInvoiceId,
+            eventType: GeneratedInvoiceEventType.EMAILED,
+            actorId: input.actorId,
+            recipientEmail: current.recipientEmail,
+            metadata: {
+              outboxId: current.id,
+              providerMessageKey: current.providerMessageKey,
+              reconciled: true,
+              action: input.action,
+              note: input.note ?? null,
+            },
+          },
+        });
+      }
+
+      return {
+        ...current,
+        deliveryState: delivered ? 'SENT' : 'RETRY_WAIT',
+        sentAt: delivered ? input.reconciledAt : null,
+      };
+    });
+  }
+
   private async allocateMonthlyPayoutInTransaction(
     tx: Prisma.TransactionClient,
     input: MonthlyPayoutAllocationInput,
@@ -1335,6 +1560,36 @@ export class PackagePlansRepository {
         'Payout subscription does not belong to restaurant and tenant',
       );
     }
+    const existingLedger = await tx.restaurantPayoutMonthlyLedger.findUnique({
+      where: {
+        restaurantId_subscriptionId_localMonth: {
+          restaurantId: input.restaurantId,
+          subscriptionId: input.subscriptionId,
+          localMonth: input.localMonth,
+        },
+      },
+      select: {
+        commissionAllocatedAmount: true,
+        monthlyFeeAllocatedAmount: true,
+      },
+    });
+    const effectiveCommissionCapAmount =
+      input.commissionCapAmount === null
+        ? null
+        : Prisma.Decimal.max(
+            input.commissionCapAmount,
+            existingLedger?.commissionAllocatedAmount ?? 0,
+          );
+    const effectiveMonthlyFeeAmount = Prisma.Decimal.max(
+      input.monthlyFeeAmount,
+      existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+    );
+    const effectiveMonthlyFeeOutstandingAmount = Prisma.Decimal.max(
+      effectiveMonthlyFeeAmount.minus(
+        existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+      ),
+      0,
+    );
     const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
       where: {
         restaurantId_subscriptionId_localMonth: {
@@ -1355,12 +1610,12 @@ export class PackagePlansRepository {
         commissionType: input.commissionType,
         commissionPercentage: input.commissionPercentage,
         commissionFixedAmount: input.commissionFixedAmount,
-        commissionCapAmount: input.commissionCapAmount,
+        commissionCapAmount: effectiveCommissionCapAmount,
         vatPercentage: input.vatPercentage,
-        monthlyFeeAmount: input.monthlyFeeAmount,
+        monthlyFeeAmount: effectiveMonthlyFeeAmount,
         payoutCycle: input.payoutCycle,
         payoutOpportunities: input.payoutOpportunities,
-        monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
+        monthlyFeeOutstandingAmount: effectiveMonthlyFeeAmount,
       },
       update: {
         packagePlanId: input.packagePlanId,
@@ -1368,11 +1623,12 @@ export class PackagePlansRepository {
         commissionType: input.commissionType,
         commissionPercentage: input.commissionPercentage,
         commissionFixedAmount: input.commissionFixedAmount,
-        commissionCapAmount: input.commissionCapAmount,
+        commissionCapAmount: effectiveCommissionCapAmount,
         vatPercentage: input.vatPercentage,
-        monthlyFeeAmount: input.monthlyFeeAmount,
+        monthlyFeeAmount: effectiveMonthlyFeeAmount,
         payoutCycle: input.payoutCycle,
         payoutOpportunities: input.payoutOpportunities,
+        monthlyFeeOutstandingAmount: effectiveMonthlyFeeOutstandingAmount,
       },
     });
     if (ledger.finalizedAt) {

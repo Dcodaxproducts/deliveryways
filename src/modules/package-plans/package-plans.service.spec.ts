@@ -17,6 +17,7 @@ import {
   SubscriptionStatus,
 } from '@prisma/client';
 import { PackagePlansService } from './package-plans.service';
+import { PayoutInvoiceEmailReconciliationAction } from './dto';
 
 describe('PackagePlansService', () => {
   const superAdmin = { uid: 'admin-1', role: 'SUPER_ADMIN' } as never;
@@ -2646,5 +2647,114 @@ describe('PackagePlansService', () => {
     expect(first).not.toBe(second);
     expect(first.length).toBeLessThanOrEqual(100);
     expect(second.length).toBeLessThanOrEqual(100);
+  });
+
+  it('requires explicit operator reconciliation before resending with the stable provider key', async () => {
+    const providerMessageKey = 'payout-invoice-invoice-1@deliveryways.app';
+    const repository = {
+      reconcilePayoutInvoiceEmail: jest.fn().mockResolvedValue({
+        id: 'outbox-1',
+        generatedInvoiceId: 'invoice-1',
+        recipientEmail: 'billing@example.test',
+        providerMessageKey,
+        deliveryState: 'RETRY_WAIT',
+        generatedInvoice: { id: 'invoice-1', snapshot: {} },
+      }),
+    };
+    const service = new PackagePlansService(repository as never);
+    const internals = service as unknown as {
+      hydrateStoredPayoutInvoiceSnapshot: (snapshot: unknown) => unknown;
+      deliverWeeklyPayoutInvoice: (
+        user: unknown,
+        invoice: unknown,
+        recipientEmail: string,
+        generatedInvoiceId: string,
+      ) => Promise<boolean>;
+    };
+    jest
+      .spyOn(internals, 'hydrateStoredPayoutInvoiceSnapshot')
+      .mockReturnValue({ invoiceNumber: 'PAYOUT-1' });
+    const deliver = jest
+      .spyOn(internals, 'deliverWeeklyPayoutInvoice')
+      .mockResolvedValue(true);
+
+    await expect(
+      service.reconcilePayoutInvoiceEmail(superAdmin, 'invoice-1', {
+        action: PayoutInvoiceEmailReconciliationAction.RESEND,
+        note: 'Provider confirmed no delivery',
+      }),
+    ).resolves.toEqual({
+      data: {
+        generatedInvoiceId: 'invoice-1',
+        action: PayoutInvoiceEmailReconciliationAction.RESEND,
+        deliveryState: 'SENT',
+        providerMessageKey,
+      },
+    });
+    expect(repository.reconcilePayoutInvoiceEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generatedInvoiceId: 'invoice-1',
+        action: PayoutInvoiceEmailReconciliationAction.RESEND,
+        actorId: 'admin-1',
+      }),
+    );
+    expect(deliver).toHaveBeenCalledWith(
+      superAdmin,
+      { invoiceNumber: 'PAYOUT-1' },
+      'billing@example.test',
+      'invoice-1',
+    );
+  });
+
+  it('keeps a finalized payout successful when SMTP delivery becomes UNKNOWN', async () => {
+    const service = new PackagePlansService(
+      {} as never,
+      { sendEmail: jest.fn() } as never,
+    );
+    const invoice = {
+      invoiceNumber: 'PAYOUT-1',
+      restaurant: {
+        id: 'restaurant-1',
+        billingEmail: 'billing@example.test',
+      },
+      period: {
+        from: new Date('2026-07-01T00:00:00.000Z'),
+        to: new Date('2026-07-08T00:00:00.000Z'),
+      },
+    };
+    const internals = service as unknown as {
+      buildWeeklyPayoutInvoice: () => Promise<unknown>;
+      persistWeeklyPayoutInvoice: () => Promise<unknown>;
+      hydrateStoredPayoutInvoiceSnapshot: () => unknown;
+      deliverWeeklyPayoutInvoice: () => Promise<boolean>;
+    };
+    jest
+      .spyOn(internals, 'buildWeeklyPayoutInvoice')
+      .mockResolvedValue(invoice);
+    const persist = jest
+      .spyOn(internals, 'persistWeeklyPayoutInvoice')
+      .mockResolvedValue({ invoice: { id: 'invoice-1', snapshot: invoice } });
+    jest
+      .spyOn(internals, 'hydrateStoredPayoutInvoiceSnapshot')
+      .mockReturnValue(invoice);
+    jest
+      .spyOn(internals, 'deliverWeeklyPayoutInvoice')
+      .mockRejectedValue(new Error('SMTP outcome unknown'));
+
+    await expect(
+      service.sendWeeklyPayoutInvoiceEmail(superAdmin, {
+        restaurantId: 'restaurant-1',
+        fromDate: '2026-07-01T00:00:00.000Z',
+        toDate: '2026-07-08T00:00:00.000Z',
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        invoiceNumber: 'PAYOUT-1',
+        emailDeliveryState: 'UNKNOWN',
+      },
+      message:
+        'Payout invoice finalized; email delivery requires reconciliation',
+    });
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 });

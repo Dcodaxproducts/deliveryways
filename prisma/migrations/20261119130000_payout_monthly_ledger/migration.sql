@@ -2,6 +2,32 @@
 -- New tables and indexes are additive. Apply only after a verified backup.
 BEGIN;
 
+DO $$
+DECLARE
+  duplicate_groups BIGINT;
+  duplicate_rows BIGINT;
+BEGIN
+  SELECT COUNT(*), COALESCE(SUM(group_size - 1), 0)
+  INTO duplicate_groups, duplicate_rows
+  FROM (
+    SELECT COUNT(*) AS group_size
+    FROM "generated_invoices"
+    GROUP BY "kind", "source_key"
+    HAVING COUNT(*) > 1
+  ) AS duplicates;
+
+  IF duplicate_groups > 0 THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23505',
+      MESSAGE = format(
+        'Cannot add generated_invoices(kind, source_key) uniqueness: %s duplicate group(s) containing %s extra row(s)',
+        duplicate_groups,
+        duplicate_rows
+      ),
+      HINT = 'Resolve duplicate generated invoice source keys before retrying migration 20261119130000_payout_monthly_ledger.';
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX "generated_invoices_kind_source_key_key"
   ON "generated_invoices"("kind", "source_key");
 

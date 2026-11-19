@@ -352,6 +352,10 @@ describe('PackagePlansRepository monthly payout allocation', () => {
         create,
       },
       restaurantPayoutMonthlyLedger: {
+        findUnique: jest.fn().mockResolvedValue({
+          commissionAllocatedAmount: new Prisma.Decimal(45),
+          monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
+        }),
         upsert: jest.fn().mockResolvedValue({
           id: 'ledger-1',
           finalizedAt: null,
@@ -440,17 +444,16 @@ describe('PackagePlansRepository monthly payout allocation', () => {
       where: {
         generatedInvoiceId: 'invoice-1',
         sentAt: null,
-        deliveryState: { not: 'FAILED' },
+        deliveryState: { in: ['PENDING', 'RETRY_WAIT'] },
+        claimToken: null,
+        attempts: { lt: 8 },
         OR: [
-          {
-            deliveryState: 'SENDING',
-            claimExpiresAt: { lte: new Date('2026-07-01T10:00:00.000Z') },
-          },
-          expect.objectContaining({ claimToken: null, attempts: { lt: 8 } }),
+          { nextAttemptAt: null },
+          { nextAttemptAt: { lte: new Date('2026-07-01T10:00:00.000Z') } },
         ],
       },
       data: {
-        deliveryState: 'SENDING',
+        deliveryState: 'PREPARING',
         claimExpiresAt: new Date('2026-07-01T10:05:00.000Z'),
       },
     });
@@ -479,7 +482,12 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     });
 
     expect(capturedFailure).toMatchObject({
-      where: { id: 'outbox-1', claimToken: 'claim-1', sentAt: null },
+      where: {
+        id: 'outbox-1',
+        claimToken: 'claim-1',
+        deliveryState: 'PREPARING',
+        sentAt: null,
+      },
       data: {
         deliveryState: 'RETRY_WAIT',
         claimToken: null,
@@ -535,5 +543,150 @@ describe('PackagePlansRepository monthly payout allocation', () => {
         },
       },
     });
+  });
+
+  it('retries an expired pre-send claim but quarantines an expired SMTP claim as UNKNOWN', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const tx = {
+      payoutInvoiceEmailOutbox: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'before-send', deliveryState: 'PREPARING' },
+          { id: 'after-send', deliveryState: 'SENDING' },
+        ]),
+        updateMany: jest.fn((args: Record<string, unknown>) => {
+          updates.push(args);
+          return Promise.resolve({ count: 1 });
+        }),
+      },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+    const now = new Date('2026-07-01T10:10:00.000Z');
+
+    await expect(
+      repository.reconcileExpiredPayoutInvoiceEmailClaims(now, 2),
+    ).resolves.toEqual({ retryable: 1, unknown: 1 });
+    expect(updates[0]).toMatchObject({
+      where: {
+        id: { in: ['before-send'] },
+        deliveryState: 'PREPARING',
+      },
+      data: {
+        deliveryState: 'RETRY_WAIT',
+        nextAttemptAt: now,
+      },
+    });
+    expect(updates[1]).toMatchObject({
+      where: {
+        id: { in: ['after-send'] },
+        deliveryState: 'SENDING',
+      },
+      data: {
+        deliveryState: 'UNKNOWN',
+        nextAttemptAt: null,
+        reconciliationRequiredAt: now,
+      },
+    });
+  });
+
+  it('never includes UNKNOWN delivery outcomes in automatic resend candidates', async () => {
+    let capturedWhere: Record<string, unknown> | undefined;
+    const repository = new PackagePlansRepository({
+      payoutInvoiceEmailOutbox: {
+        findMany: jest.fn((args: { where: Record<string, unknown> }) => {
+          capturedWhere = args.where;
+          return Promise.resolve([]);
+        }),
+      },
+    } as never);
+
+    await repository.listDuePayoutInvoiceEmails(
+      new Date('2026-07-01T10:10:00.000Z'),
+    );
+
+    expect(capturedWhere).toMatchObject({
+      deliveryState: { in: ['PENDING', 'RETRY_WAIT'] },
+      claimToken: null,
+    });
+  });
+
+  it('moves an uncertain SMTP error to UNKNOWN without scheduling a resend', async () => {
+    let captured: Record<string, unknown> | undefined;
+    const repository = new PackagePlansRepository({
+      payoutInvoiceEmailOutbox: {
+        updateMany: jest.fn((args: Record<string, unknown>) => {
+          captured = args;
+          return Promise.resolve({ count: 1 });
+        }),
+      },
+    } as never);
+    const detectedAt = new Date('2026-07-01T10:02:00.000Z');
+
+    await repository.markPayoutInvoiceEmailUnknown({
+      outboxId: 'outbox-1',
+      claimToken: 'claim-1',
+      detectedAt,
+      error: 'connection closed after DATA',
+    });
+
+    expect(captured).toMatchObject({
+      where: {
+        id: 'outbox-1',
+        claimToken: 'claim-1',
+        deliveryState: 'SENDING',
+      },
+      data: {
+        deliveryState: 'UNKNOWN',
+        nextAttemptAt: null,
+        reconciliationRequiredAt: detectedAt,
+      },
+    });
+  });
+
+  it('allows only one concurrent operator reconciliation to mark delivery', async () => {
+    let attempt = 0;
+    const current = {
+      id: 'outbox-1',
+      generatedInvoiceId: 'invoice-1',
+      recipientEmail: 'billing@example.test',
+      providerMessageKey: 'payout-invoice-invoice-1@deliveryways.app',
+      deliveryState: 'UNKNOWN',
+      generatedInvoice: { id: 'invoice-1', snapshot: {} },
+    };
+    const tx = {
+      payoutInvoiceEmailOutbox: {
+        findUnique: jest.fn().mockResolvedValue(current),
+        updateMany: jest.fn(() => {
+          attempt += 1;
+          return Promise.resolve({ count: attempt === 1 ? 1 : 0 });
+        }),
+      },
+      generatedInvoice: { update: jest.fn().mockResolvedValue({}) },
+      generatedInvoiceEvent: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+    const input = {
+      generatedInvoiceId: 'invoice-1',
+      action: 'DELIVERED' as const,
+      actorId: 'operator-1',
+      reconciledAt: new Date('2026-07-01T10:15:00.000Z'),
+      note: 'Confirmed in provider logs',
+    };
+
+    await expect(
+      repository.reconcilePayoutInvoiceEmail(input),
+    ).resolves.toEqual(expect.objectContaining({ deliveryState: 'SENT' }));
+    await expect(
+      repository.reconcilePayoutInvoiceEmail(input),
+    ).resolves.toBeNull();
+    expect(tx.generatedInvoice.update).toHaveBeenCalledTimes(1);
+    expect(tx.generatedInvoiceEvent.create).toHaveBeenCalledTimes(1);
   });
 });

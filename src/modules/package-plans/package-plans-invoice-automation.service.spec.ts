@@ -6,9 +6,13 @@ describe('PackagePlansInvoiceAutomationService', () => {
       emailDueSubscriptionInvoices: jest
         .fn()
         .mockResolvedValue({ sent: 1, skipped: 0 }),
-      retryDuePayoutInvoiceEmails: jest
-        .fn()
-        .mockResolvedValue({ sent: 0, failed: 0, skipped: 0 }),
+      retryDuePayoutInvoiceEmails: jest.fn().mockResolvedValue({
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        unknown: 0,
+        recovered: 0,
+      }),
       emailDuePayoutInvoices: jest
         .fn()
         .mockResolvedValue({ sent: 0, skipped: 0 }),

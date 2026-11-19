@@ -1,4 +1,6 @@
 -- Cadence-aware monthly fee allocation and crash-safe payout email delivery.
+BEGIN;
+
 ALTER TABLE "restaurant_payout_monthly_ledgers"
   ADD COLUMN "payout_cycle" "PackagePayoutCycle",
   ADD COLUMN "payout_opportunities" INTEGER;
@@ -31,7 +33,11 @@ ALTER TABLE "payout_invoice_email_outbox"
   ADD COLUMN "claim_token" VARCHAR(64),
   ADD COLUMN "claim_expires_at" TIMESTAMPTZ,
   ADD COLUMN "next_attempt_at" TIMESTAMPTZ,
-  ADD COLUMN "provider_accepted_at" TIMESTAMPTZ;
+  ADD COLUMN "provider_accepted_at" TIMESTAMPTZ,
+  ADD COLUMN "reconciliation_required_at" TIMESTAMPTZ,
+  ADD COLUMN "reconciled_at" TIMESTAMPTZ,
+  ADD COLUMN "reconciled_by" TEXT,
+  ADD COLUMN "reconciliation_note" VARCHAR(1000);
 
 UPDATE "payout_invoice_email_outbox"
 SET "provider_message_key" = 'payout-invoice-' || "generated_invoice_id" || '@deliveryways.app',
@@ -40,12 +46,17 @@ SET "provider_message_key" = 'payout-invoice-' || "generated_invoice_id" || '@de
 
 ALTER TABLE "payout_invoice_email_outbox"
   ALTER COLUMN "provider_message_key" SET NOT NULL,
-  ADD CONSTRAINT "payout_invoice_email_outbox_state_check" CHECK ("delivery_state" IN ('PENDING', 'SENDING', 'RETRY_WAIT', 'SENT', 'FAILED')),
+  ADD CONSTRAINT "payout_invoice_email_outbox_state_check" CHECK ("delivery_state" IN ('PENDING', 'PREPARING', 'SENDING', 'RETRY_WAIT', 'UNKNOWN', 'SENT', 'FAILED')),
   ADD CONSTRAINT "payout_invoice_email_outbox_claim_check" CHECK (("claim_token" IS NULL AND "claim_expires_at" IS NULL) OR ("claim_token" IS NOT NULL AND "claim_expires_at" IS NOT NULL)),
   ADD CONSTRAINT "payout_invoice_email_outbox_sent_state_check" CHECK (("delivery_state" = 'SENT') = ("sent_at" IS NOT NULL)),
-  ADD CONSTRAINT "payout_invoice_email_outbox_claim_state_check" CHECK (("delivery_state" = 'SENDING') = ("claim_token" IS NOT NULL));
+  ADD CONSTRAINT "payout_invoice_email_outbox_claim_state_check" CHECK (("delivery_state" IN ('PREPARING', 'SENDING')) = ("claim_token" IS NOT NULL)),
+  ADD CONSTRAINT "payout_invoice_email_outbox_reconciliation_state_check" CHECK (("delivery_state" = 'UNKNOWN') = ("reconciliation_required_at" IS NOT NULL)),
+  ADD CONSTRAINT "payout_invoice_email_outbox_provider_accepted_check" CHECK (("delivery_state" = 'SENT') = ("provider_accepted_at" IS NOT NULL));
 
 CREATE UNIQUE INDEX "payout_invoice_email_outbox_provider_message_key_key" ON "payout_invoice_email_outbox"("provider_message_key");
 CREATE UNIQUE INDEX "payout_invoice_email_outbox_claim_token_key" ON "payout_invoice_email_outbox"("claim_token");
 DROP INDEX "payout_invoice_email_outbox_dispatch_idx";
-CREATE INDEX "payout_invoice_email_outbox_dispatch_idx" ON "payout_invoice_email_outbox"("sent_at", "next_attempt_at", "claim_expires_at", "created_at");
+CREATE INDEX "payout_invoice_email_outbox_dispatch_idx" ON "payout_invoice_email_outbox"("delivery_state", "next_attempt_at", "claim_expires_at", "created_at");
+CREATE INDEX "payout_invoice_email_outbox_reconciliation_idx" ON "payout_invoice_email_outbox"("reconciliation_required_at", "created_at") WHERE "delivery_state" = 'UNKNOWN';
+
+COMMIT;

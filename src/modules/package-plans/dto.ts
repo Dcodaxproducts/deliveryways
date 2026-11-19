@@ -440,6 +440,27 @@ export class SendWeeklyRestaurantPayoutInvoiceDto extends WeeklyRestaurantPayout
   email?: string;
 }
 
+export enum PayoutInvoiceEmailReconciliationAction {
+  DELIVERED = 'DELIVERED',
+  NOT_DELIVERED = 'NOT_DELIVERED',
+  RESEND = 'RESEND',
+}
+
+export class ReconcilePayoutInvoiceEmailDto {
+  @ApiProperty({ enum: PayoutInvoiceEmailReconciliationAction })
+  @IsEnum(PayoutInvoiceEmailReconciliationAction)
+  action!: PayoutInvoiceEmailReconciliationAction;
+
+  @ApiPropertyOptional({
+    description: 'Operator evidence or provider reconciliation reference.',
+    maxLength: 1000,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
 export class ListSubscriptionDeductionsDto extends AdminListQueryDto {
   @ApiPropertyOptional()
   @IsOptional()

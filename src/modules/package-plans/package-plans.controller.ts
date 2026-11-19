@@ -34,6 +34,7 @@ import {
   ListSubscriptionDeductionsDto,
   ListTenantSubscriptionsDto,
   MonthlyInvoiceDatevExportQueryDto,
+  ReconcilePayoutInvoiceEmailDto,
   SendTenantSubscriptionInvoiceDto,
   SendWeeklyRestaurantPayoutInvoiceDto,
   UpdatePackagePlanDto,
@@ -216,6 +217,30 @@ export class PackagePlansController {
     @Body() dto: SendWeeklyRestaurantPayoutInvoiceDto,
   ) {
     return this.packagePlansService.sendWeeklyPayoutInvoiceEmail(user, dto);
+  }
+
+  @Get('payouts/email-deliveries/reconciliation')
+  @ApiOperation({
+    summary: 'List payout emails with an unknown SMTP delivery outcome',
+  })
+  listPayoutInvoiceEmailReconciliations(@CurrentUser() user: AuthUserContext) {
+    return this.packagePlansService.listPayoutInvoiceEmailReconciliations(user);
+  }
+
+  @Post('payouts/email-deliveries/:generatedInvoiceId/reconcile')
+  @ApiOperation({
+    summary: 'Reconcile or explicitly resend an unknown payout email',
+  })
+  reconcilePayoutInvoiceEmail(
+    @CurrentUser() user: AuthUserContext,
+    @Param('generatedInvoiceId') generatedInvoiceId: string,
+    @Body() dto: ReconcilePayoutInvoiceEmailDto,
+  ) {
+    return this.packagePlansService.reconcilePayoutInvoiceEmail(
+      user,
+      generatedInvoiceId,
+      dto,
+    );
   }
 
   @Get('deductions')
