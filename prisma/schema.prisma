@@ -420,10 +420,10 @@ model Tenant {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner                  User?                   @relation("TenantOwner", fields: [ownerId], references: [id])
+  owner                  User?                           @relation("TenantOwner", fields: [ownerId], references: [id])
   restaurants            Restaurant[]
   branches               Branch[]
-  users                  User[]                  @relation("TenantUsers")
+  users                  User[]                          @relation("TenantUsers")
   staffRoles             StaffRole[]
   staffUsers             StaffUser[]
   coupons                Coupon[]
@@ -444,6 +444,9 @@ model Tenant {
   packagePlans           PackagePlan[]
   tenantSubscriptions    TenantSubscription[]
   subscriptionDeductions SubscriptionDeduction[]
+  payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerTenant")
+  payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleTenant")
+  payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxTenant")
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
@@ -474,9 +477,9 @@ model Restaurant {
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant                 Tenant                  @relation(fields: [tenantId], references: [id])
+  tenant                 Tenant                          @relation(fields: [tenantId], references: [id])
   branches               Branch[]
-  users                  User[]                  @relation("RestaurantUsers")
+  users                  User[]                          @relation("RestaurantUsers")
   staffRoles             StaffRole[]
   staffUsers             StaffUser[]
   restaurantMenus        RestaurantMenu[]
@@ -505,6 +508,9 @@ model Restaurant {
   posOrderDrafts         PosOrderDraft[]
   tenantSubscriptions    TenantSubscription[]
   subscriptionDeductions SubscriptionDeduction[]
+  payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerRestaurant")
+  payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleRestaurant")
+  payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxRestaurant")
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
@@ -2163,8 +2169,9 @@ model PackagePlan {
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant        Tenant?              @relation(fields: [tenantId], references: [id])
-  subscriptions TenantSubscription[]
+  tenant               Tenant?                         @relation(fields: [tenantId], references: [id])
+  subscriptions        TenantSubscription[]
+  payoutMonthlyLedgers RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerPlan")
 
   @@index([tenantId, billingModel, isActive])
   @@index([isDefault, isActive])
@@ -2189,10 +2196,11 @@ model TenantSubscription {
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant      Tenant                  @relation(fields: [tenantId], references: [id])
-  restaurant  Restaurant?             @relation(fields: [restaurantId], references: [id])
-  packagePlan PackagePlan             @relation(fields: [packagePlanId], references: [id])
-  deductions  SubscriptionDeduction[]
+  tenant               Tenant                          @relation(fields: [tenantId], references: [id])
+  restaurant           Restaurant?                     @relation(fields: [restaurantId], references: [id])
+  packagePlan          PackagePlan                     @relation(fields: [packagePlanId], references: [id])
+  deductions           SubscriptionDeduction[]
+  payoutMonthlyLedgers RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerSubscription")
 
   @@index([tenantId, status])
   @@index([restaurantId, status])
@@ -2296,7 +2304,9 @@ model GeneratedInvoice {
 
   events            GeneratedInvoiceEvent[]
   payoutAllocations RestaurantPayoutAllocation[]
+  payoutEmailOutbox PayoutInvoiceEmailOutbox?
 
+  @@unique([kind, sourceKey], map: "generated_invoices_kind_source_key_key")
   @@index([kind, sourceKey])
   @@index([restaurantId, createdAt])
   @@index([orderId])
@@ -2306,6 +2316,7 @@ model GeneratedInvoice {
 
 model RestaurantPayoutMonthlyLedger {
   id                          String                @id @default(cuid())
+  tenantId                    String                @map("tenant_id")
   restaurantId                String                @map("restaurant_id")
   subscriptionId              String                @map("subscription_id")
   localMonth                  String                @map("local_month") @db.VarChar(7)
@@ -2326,7 +2337,11 @@ model RestaurantPayoutMonthlyLedger {
   createdAt                   DateTime              @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                   DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
-  allocations RestaurantPayoutAllocation[]
+  tenant       Tenant                       @relation("PayoutLedgerTenant", fields: [tenantId], references: [id], onDelete: Restrict)
+  restaurant   Restaurant                   @relation("PayoutLedgerRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
+  subscription TenantSubscription           @relation("PayoutLedgerSubscription", fields: [subscriptionId], references: [id], onDelete: Restrict)
+  packagePlan  PackagePlan                  @relation("PayoutLedgerPlan", fields: [packagePlanId], references: [id], onDelete: Restrict)
+  allocations  RestaurantPayoutAllocation[]
 
   @@unique([restaurantId, subscriptionId, localMonth], map: "restaurant_payout_monthly_ledgers_scope_key")
   @@index([restaurantId, localMonth], map: "restaurant_payout_monthly_ledgers_lookup_idx")
@@ -2349,7 +2364,7 @@ model RestaurantPayoutAllocation {
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   ledger           RestaurantPayoutMonthlyLedger @relation(fields: [ledgerId], references: [id], onDelete: Restrict)
-  generatedInvoice GeneratedInvoice?             @relation(fields: [generatedInvoiceId], references: [id], onDelete: SetNull)
+  generatedInvoice GeneratedInvoice?             @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
 
   @@unique([ledgerId, sequence], map: "restaurant_payout_allocations_sequence_key")
   @@index([ledgerId, finalizedAt], map: "restaurant_payout_allocations_ledger_idx")
@@ -2359,13 +2374,39 @@ model RestaurantPayoutAllocation {
 
 model RestaurantPayoutSchedule {
   restaurantId    String    @id @map("restaurant_id")
+  tenantId        String    @map("tenant_id")
   lastFinalizedAt DateTime? @map("last_finalized_at") @db.Timestamptz
   lockToken       String?   @unique @map("lock_token") @db.VarChar(64)
   lockExpiresAt   DateTime? @map("lock_expires_at") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
+  tenant     Tenant     @relation("PayoutScheduleTenant", fields: [tenantId], references: [id], onDelete: Restrict)
+  restaurant Restaurant @relation("PayoutScheduleRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
+
   @@map("restaurant_payout_schedules")
+}
+
+model PayoutInvoiceEmailOutbox {
+  id                 String    @id @default(cuid())
+  tenantId           String    @map("tenant_id")
+  restaurantId       String    @map("restaurant_id")
+  generatedInvoiceId String    @unique @map("generated_invoice_id")
+  recipientEmail     String    @map("recipient_email") @db.VarChar(320)
+  actorId            String?   @map("actor_id")
+  claimedAt          DateTime? @map("claimed_at") @db.Timestamptz
+  sentAt             DateTime? @map("sent_at") @db.Timestamptz
+  attempts           Int       @default(0)
+  lastError          String?   @map("last_error") @db.VarChar(1000)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant           Tenant           @relation("PayoutOutboxTenant", fields: [tenantId], references: [id], onDelete: Restrict)
+  restaurant       Restaurant       @relation("PayoutOutboxRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
+  generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([sentAt, claimedAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
+  @@map("payout_invoice_email_outbox")
 }
 
 model GeneratedInvoiceEvent {

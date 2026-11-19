@@ -261,6 +261,7 @@ describe('PackagePlansRepository monthly payout history', () => {
 
 describe('PackagePlansRepository monthly payout allocation', () => {
   const input = {
+    tenantId: 'tenant-1',
     restaurantId: 'restaurant-1',
     subscriptionId: 'subscription-1',
     localMonth: '2026-06',
@@ -270,6 +271,7 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     grossCommissionableAmount: new Prisma.Decimal(400),
     commissionableOrderCount: 1,
     availablePayoutAmount: new Prisma.Decimal(400),
+    availableForMonthlyFeeAmount: new Prisma.Decimal(380),
     packagePlanId: 'plan-1',
     billingModel: PackageBillingModel.HYBRID,
     commissionType: PackageCommissionType.PERCENTAGE,
@@ -278,6 +280,8 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     commissionFixedAmount: new Prisma.Decimal(0),
     vatPercentage: new Prisma.Decimal(19),
     monthlyFeeAmount: new Prisma.Decimal(159),
+    expectedCommissionAmount: new Prisma.Decimal(20),
+    expectedMonthlyFeeAmount: new Prisma.Decimal('39.75'),
     snapshotHash: 'a'.repeat(64),
   };
 
@@ -336,6 +340,9 @@ describe('PackagePlansRepository monthly payout allocation', () => {
       return Promise.resolve({ id: 'ledger-1' });
     });
     const tx = {
+      tenantSubscription: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'subscription-1' }),
+      },
       restaurantPayoutAllocation: {
         findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(2),
@@ -363,6 +370,9 @@ describe('PackagePlansRepository monthly payout allocation', () => {
       ...input,
       sourceKey: 'restaurant-1:special:request-1:2026-06',
       availablePayoutAmount: new Prisma.Decimal(12),
+      availableForMonthlyFeeAmount: new Prisma.Decimal(12),
+      expectedCommissionAmount: new Prisma.Decimal(0),
+      expectedMonthlyFeeAmount: new Prisma.Decimal(0),
       isSpecialPayout: true,
     });
 
@@ -380,5 +390,39 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     expect(capturedLedgerUpdate.data?.monthlyFeeAllocatedAmount).toEqual(
       new Prisma.Decimal('79.50'),
     );
+  });
+
+  it('claims a payout email outbox only once so retries cannot duplicate delivery', async () => {
+    const updateMany = jest
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const findUniqueOrThrow = jest.fn().mockResolvedValue({
+      id: 'outbox-1',
+      generatedInvoiceId: 'invoice-1',
+      recipientEmail: 'billing@example.test',
+    });
+    const tx = {
+      payoutInvoiceEmailOutbox: { updateMany, findUniqueOrThrow },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+
+    await expect(
+      repository.claimPayoutInvoiceEmail(
+        'invoice-1',
+        new Date('2026-07-01T10:00:00.000Z'),
+      ),
+    ).resolves.toMatchObject({ id: 'outbox-1' });
+    await expect(
+      repository.claimPayoutInvoiceEmail(
+        'invoice-1',
+        new Date('2026-07-01T10:01:00.000Z'),
+      ),
+    ).resolves.toBeNull();
+    expect(findUniqueOrThrow).toHaveBeenCalledTimes(1);
   });
 });
