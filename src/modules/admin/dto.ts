@@ -34,6 +34,13 @@ import {
 import { OrderTypeEnum } from '../../common/enums';
 
 export class AdminListCustomersDto extends AdminListQueryDto {
+  @ApiPropertyOptional({
+    description: 'Filter customers by assigned/order branch',
+  })
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
   @ApiPropertyOptional({ description: 'Filter customers by restaurant' })
   @IsOptional()
   @IsString()

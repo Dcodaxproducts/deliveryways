@@ -119,6 +119,54 @@ describe('UsersRepository', () => {
     expect(count.mock.calls[0]?.[0].where.AND).toEqual(expectedEligibility);
   });
 
+  it('applies branch membership or branch-order scope to list, count, and detail queries', async () => {
+    type QueryArgs = { where: { AND?: unknown[]; OR?: unknown[] } };
+    const findMany = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(0);
+    });
+    const findFirst = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(null);
+    });
+    const prisma = {
+      user: { findMany, count, findFirst },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      branchId: 'branch-1',
+    });
+    await repository.findCustomerById('customer-1', {
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+    });
+
+    const branchScope = {
+      OR: [
+        { branchId: 'branch-1' },
+        { customerOrders: { some: { branchId: 'branch-1' } } },
+      ],
+    };
+    expect(findMany.mock.calls[0]?.[0].where.AND).toContainEqual(branchScope);
+    expect(count.mock.calls[0]?.[0].where.AND).toContainEqual(branchScope);
+    expect(findFirst.mock.calls[0]?.[0].where).toEqual(
+      expect.objectContaining(branchScope),
+    );
+  });
+
   it('applies account and inclusive creation-date filters before pagination', async () => {
     type QueryArgs = {
       where: Record<string, unknown>;

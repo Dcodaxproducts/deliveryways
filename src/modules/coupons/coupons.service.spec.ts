@@ -701,6 +701,7 @@ describe('CouponsService', () => {
       ),
     ).resolves.toEqual({
       dealId: 'deal-1',
+      dealName: '20% Off',
       forcedVariationId: 'var-large',
     });
   });

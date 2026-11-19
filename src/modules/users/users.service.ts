@@ -183,6 +183,7 @@ export class UsersService {
     options?: {
       tenantId?: string;
       restaurantId?: string;
+      branchId?: string;
       withDeleted?: boolean;
     },
   ) {

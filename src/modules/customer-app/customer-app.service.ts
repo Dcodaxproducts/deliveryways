@@ -814,23 +814,8 @@ export class CustomerAppService {
       user,
     );
     const { items, total } =
-      await this.customerAppRepository.listCuisineCategories(resolvedQuery, {
-        includeItems: true,
-      });
-    const visibleCuisines = items
-      .map((item) => {
-        const visibleItemCount = Array.isArray(item.items)
-          ? this.filterAvailableMenuItems(
-              item.items as PublicMenuItemScheduleCarrier[],
-            ).length
-          : item._count.items;
-        return {
-          ...item,
-          items: undefined,
-          _count: { items: visibleItemCount },
-        };
-      })
-      .filter((item) => item._count.items > 0);
+      await this.customerAppRepository.listCuisineCategories(resolvedQuery);
+    const visibleCuisines = items.filter((item) => item._count.items > 0);
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
       resolvedQuery.locale,
@@ -953,23 +938,8 @@ export class CustomerAppService {
         categoryIds: promotionContext.hasBroadHappyHour
           ? []
           : promotionContext.categoryIds,
-        includeItems: true,
       });
-    const visibleCuisines = items
-      .map((item) => {
-        const visibleItemCount = Array.isArray(item.items)
-          ? this.filterAvailableMenuItems(
-              item.items as PublicMenuItemScheduleCarrier[],
-            ).length
-          : item._count.items;
-
-        return {
-          ...item,
-          items: undefined,
-          _count: { items: visibleItemCount },
-        };
-      })
-      .filter((item) => item._count.items > 0);
+    const visibleCuisines = items.filter((item) => item._count.items > 0);
     const translationContext = await this.loadTranslationContext(
       resolvedQuery.restaurantId,
       resolvedQuery.locale,

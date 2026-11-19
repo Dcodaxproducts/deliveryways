@@ -1919,26 +1919,8 @@ describe('CustomerAppService', () => {
           description: null,
           imageUrl: 'category.png',
           sortOrder: 0,
-          _count: { items: 3 },
+          _count: { items: 1 },
           categoryIds: ['category-1'],
-          items: [
-            { ...itemFixture, menuLinks: [] },
-            {
-              ...itemFixture,
-              id: 'closed-item',
-              menuLinks: [
-                {
-                  isActive: true,
-                  restaurantMenu: {
-                    isActive: true,
-                    deletedAt: null,
-                    isTimed: true,
-                    timingConfig: { timezone: 'UTC', windows: [] },
-                  },
-                },
-              ],
-            },
-          ],
         },
       ],
       total: 1,
@@ -1987,7 +1969,7 @@ describe('CustomerAppService', () => {
 
     expect(repository.listCuisineCategories).toHaveBeenLastCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
-      { categoryIds: ['category-1'], includeItems: true },
+      { categoryIds: ['category-1'] },
     );
     expect(promotionalResult.data[0]).toEqual(
       expect.objectContaining({ id: 'category-1', itemCount: 1 }),
@@ -2364,7 +2346,7 @@ describe('CustomerAppService', () => {
           imageUrl: 'https://cdn.example.com/category.png',
           sortOrder: 1,
           _count: { items: 1 },
-          items: [{ ...itemFixture, restaurantMenus: [] }],
+          categoryIds: [],
         },
       ],
       total: 1,
@@ -2387,7 +2369,6 @@ describe('CustomerAppService', () => {
     expect(result.data[0]).not.toHaveProperty('items');
     expect(repository.listCuisineCategories).toHaveBeenCalledWith(
       expect.objectContaining({ restaurantId: 'restaurant-1' }),
-      { includeItems: true },
     );
   });
 

@@ -576,6 +576,7 @@ describe('WinOrderPollingService', () => {
         {
           ...order.items[0],
           dealId: 'deal-1',
+          dealName: 'Family Feast',
           note: 'Well done',
         },
       ],
@@ -616,7 +617,7 @@ describe('WinOrderPollingService', () => {
 
     expect(article.ArticleName).toBe('Pizza');
     expect(article.SubArticleList?.SubArticle).toEqual([
-      { Comment: 'Deal-Artikel (deal-1)', Count: 1 },
+      { Comment: 'Deal-Artikel: Family Feast', Count: 1 },
       { Comment: 'Well done', Count: 1 },
     ]);
     expect(exports.markFailed).not.toHaveBeenCalled();

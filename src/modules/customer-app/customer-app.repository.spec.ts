@@ -106,39 +106,71 @@ describe('CustomerAppRepository', () => {
     expect(count).toHaveBeenCalledWith({ where });
   });
 
-  it('loads cuisine schedule data without a read transaction or item detail graph', async () => {
+  it('keeps cuisine listing fixed-query and schedule-aware without hydrating item links', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-16T00:30:00.000Z'));
     const findMany = jest
       .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()
-      .mockResolvedValue([]);
+      .mockResolvedValue([
+        {
+          id: 'cuisine-1',
+          name: 'Night food',
+          _count: { itemLinks: 37 },
+        },
+      ]);
     const count = jest
       .fn<ReturnType<CountCuisines>, Parameters<CountCuisines>>()
-      .mockResolvedValue(0);
-    const transaction = jest.fn();
+      .mockResolvedValue(1);
+    const findMenus = jest.fn().mockResolvedValue([
+      {
+        id: 'overnight-menu',
+        isTimed: true,
+        timingConfig: {
+          timezone: 'UTC',
+          windows: [{ day: 'SUNDAY', start: '23:00', end: '01:00' }],
+        },
+      },
+    ]);
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValue([
+        { cuisineId: 'cuisine-1', categoryId: 'category-1' },
+      ]);
     const repository = new CustomerAppRepository({
+      restaurantMenu: { findMany: findMenus },
       cuisine: { findMany, count },
-      $transaction: transaction,
+      $queryRaw: queryRaw,
     } as unknown as PrismaService);
 
-    await repository.listCuisineCategories(
-      {
-        restaurantId: 'restaurant-1',
-        branchId: 'branch-1',
-        page: 1,
-        limit: 8,
-        sortBy: 'sortOrder',
-        sortOrder: 'ASC',
-      },
-      { includeItems: true },
+    const result = await repository.listCuisineCategories({
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      page: 1,
+      limit: 8,
+      sortBy: 'sortOrder',
+      sortOrder: 'ASC',
+    });
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        categoryIds: ['category-1'],
+        _count: { items: 37 },
+      }),
     );
-
-    expect(transaction).not.toHaveBeenCalled();
+    expect(findMenus).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 501 }),
+    );
+    const cuisineQuery = findMany.mock.calls[0]?.[0];
+    expect(Object.keys(cuisineQuery?.include ?? {})).toEqual(['_count']);
+    expect(JSON.stringify(cuisineQuery)).toContain('overnight-menu');
+    expect(queryRaw).toHaveBeenCalledTimes(1);
     expect(count).toHaveBeenCalledTimes(1);
-
-    const query = findMany.mock.calls[0]?.[0];
-    const serializedQuery = JSON.stringify(query);
-    expect(serializedQuery).toContain('restaurantMenu');
-    expect(serializedQuery).not.toContain('modifierLinks');
-    expect(serializedQuery).not.toContain('variations');
+    expect(
+      findMenus.mock.calls.length +
+        findMany.mock.calls.length +
+        count.mock.calls.length +
+        queryRaw.mock.calls.length,
+    ).toBe(4);
+    jest.useRealTimers();
   });
 
   it('counts only active, non-deleted restaurant branches', async () => {

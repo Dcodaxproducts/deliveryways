@@ -101,6 +101,7 @@ export class UsersRepository {
     tenantId: string | undefined,
     query: AdminListQueryDto & {
       restaurantId?: string;
+      branchId?: string;
       isVerified?: boolean;
       isActive?: boolean;
       isGuest?: boolean;
@@ -113,25 +114,34 @@ export class UsersRepository {
       ...(tenantId ? { tenantId } : {}),
       role: UserRole.CUSTOMER,
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
+      AND: [
+        ...(query.branchId
+          ? [
+              {
+                OR: [
+                  { branchId: query.branchId },
+                  { customerOrders: { some: { branchId: query.branchId } } },
+                ],
+              },
+            ]
+          : []),
+        ...(query.isGuest === undefined
+          ? [
+              {
+                OR: [
+                  { isGuest: false },
+                  { isGuest: true, customerOrders: { some: {} } },
+                ],
+              },
+            ]
+          : []),
+      ],
       ...(query.isVerified !== undefined
         ? { isVerified: query.isVerified }
         : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
       ...(query.isGuest !== undefined ? { isGuest: query.isGuest } : {}),
-      ...(query.isGuest === false
-        ? {}
-        : query.isGuest === true
-          ? { customerOrders: { some: {} } }
-          : {
-              AND: [
-                {
-                  OR: [
-                    { isGuest: false },
-                    { isGuest: true, customerOrders: { some: {} } },
-                  ],
-                },
-              ],
-            }),
+      ...(query.isGuest === true ? { customerOrders: { some: {} } } : {}),
       ...(query.fromDate || query.toDate
         ? {
             createdAt: {
@@ -213,6 +223,7 @@ export class UsersRepository {
     options?: {
       tenantId?: string;
       restaurantId?: string;
+      branchId?: string;
       withDeleted?: boolean;
     },
   ) {
@@ -223,6 +234,14 @@ export class UsersRepository {
         ...(options?.tenantId ? { tenantId: options.tenantId } : {}),
         ...(options?.restaurantId
           ? { restaurantId: options.restaurantId }
+          : {}),
+        ...(options?.branchId
+          ? {
+              OR: [
+                { branchId: options.branchId },
+                { customerOrders: { some: { branchId: options.branchId } } },
+              ],
+            }
           : {}),
         ...(options?.withDeleted ? {} : { deletedAt: null }),
       },

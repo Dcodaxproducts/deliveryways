@@ -76,6 +76,78 @@ describe('AdminUsersService', () => {
       );
     });
 
+    it('forces branch admins to their authenticated assigned branch', async () => {
+      const usersService = {
+        listCustomers: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+      };
+      const findFirst = jest.fn().mockResolvedValue({ id: 'branch-1' });
+      const service = new AdminUsersService(
+        usersService as never,
+        {
+          branch: { findFirst },
+        } as never,
+      );
+
+      await service.listCustomers(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          bid: 'branch-1',
+        } as never,
+        {
+          page: 1,
+          limit: 20,
+          restaurantId: 'restaurant-evil',
+          branchId: 'branch-evil',
+        } as never,
+      );
+
+      expect(findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'branch-1',
+          tenantId: 'tenant-1',
+          restaurantId: 'restaurant-1',
+          isActive: true,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      expect(usersService.listCustomers).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({
+          restaurantId: 'restaurant-1',
+          branchId: 'branch-1',
+        }),
+        false,
+      );
+    });
+
+    it('rejects a branch-admin token whose branch is outside its tenant restaurant', async () => {
+      const usersService = { listCustomers: jest.fn() };
+      const service = new AdminUsersService(
+        usersService as never,
+        {
+          branch: { findFirst: jest.fn().mockResolvedValue(null) },
+        } as never,
+      );
+
+      await expect(
+        service.listCustomers(
+          {
+            uid: 'branch-admin-1',
+            role: UserRoleEnum.BRANCH_ADMIN,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            bid: 'branch-2',
+          } as never,
+          { page: 1, limit: 20 } as never,
+        ),
+      ).rejects.toThrow('Branch admin is not assigned to an active branch');
+      expect(usersService.listCustomers).not.toHaveBeenCalled();
+    });
+
     it('rejects staff customer lists outside assigned restaurants', async () => {
       const usersService = { listCustomers: jest.fn() };
       const service = new AdminUsersService(usersService as never, {} as never);
@@ -155,6 +227,46 @@ describe('AdminUsersService', () => {
           { isActive: false },
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('scopes branch-admin customer mutations to the assigned branch', async () => {
+      const usersService = {
+        findCustomerById: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          isActive: true,
+          restaurantId: 'restaurant-1',
+        }),
+        setActiveStatus: jest.fn().mockResolvedValue({
+          id: 'customer-1',
+          isActive: false,
+        }),
+      };
+      const service = new AdminUsersService(
+        usersService as never,
+        {
+          branch: {
+            findFirst: jest.fn().mockResolvedValue({ id: 'branch-1' }),
+          },
+        } as never,
+      );
+
+      await service.updateCustomerStatus(
+        {
+          uid: 'branch-admin-1',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tid: 'tenant-1',
+          rid: 'restaurant-1',
+          branchId: 'branch-1',
+        } as never,
+        'customer-1',
+        { isActive: false },
+      );
+
+      expect(usersService.findCustomerById).toHaveBeenCalledWith('customer-1', {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      });
     });
 
     it('returns not found when customer is outside scope', async () => {
@@ -403,14 +515,16 @@ describe('AdminUsersService', () => {
     });
 
     it('allows branch admin to soft delete a customer in the same restaurant', async () => {
+      const customer = {
+        id: 'customer-1',
+        role: UserRoleEnum.CUSTOMER,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        deletedAt: null,
+      };
       const usersService = {
-        findById: jest.fn().mockResolvedValue({
-          id: 'customer-1',
-          role: UserRoleEnum.CUSTOMER,
-          tenantId: 'tenant-1',
-          restaurantId: 'restaurant-1',
-          deletedAt: null,
-        }),
+        findById: jest.fn().mockResolvedValue(customer),
+        findCustomerById: jest.fn().mockResolvedValue(customer),
         softDeleteUser: jest.fn().mockResolvedValue({
           id: 'customer-1',
           role: UserRoleEnum.CUSTOMER,
@@ -419,8 +533,14 @@ describe('AdminUsersService', () => {
           deleteAfter: new Date('2026-05-01T11:00:00.000Z'),
         }),
       };
-
-      const service = new AdminUsersService(usersService as never, {} as never);
+      const service = new AdminUsersService(
+        usersService as never,
+        {
+          branch: {
+            findFirst: jest.fn().mockResolvedValue({ id: 'branch-1' }),
+          },
+        } as never,
+      );
 
       await service.removeUser(
         {
@@ -433,6 +553,11 @@ describe('AdminUsersService', () => {
         'customer-1',
       );
 
+      expect(usersService.findCustomerById).toHaveBeenCalledWith('customer-1', {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+      });
       expect(usersService.softDeleteUser).toHaveBeenCalledWith('customer-1');
     });
 

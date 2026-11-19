@@ -45,11 +45,8 @@ export class AdminUsersService {
     const scopedQuery: AdminListCustomersDto = { ...query };
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      if (!user.rid) {
-        throw new ForbiddenException('Restaurant context is required');
-      }
-
       scopedQuery.restaurantId = user.rid;
+      scopedQuery.branchId = await this.requireAssignedBranchId(user);
     }
     this.scopeStaffCustomerList(user, scopedQuery);
 
@@ -88,19 +85,20 @@ export class AdminUsersService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const branchId =
+      user.role === UserRoleEnum.BRANCH_ADMIN
+        ? await this.requireAssignedBranchId(user)
+        : undefined;
     const restaurantId =
       user.role === UserRoleEnum.BRANCH_ADMIN
         ? user.rid
         : (query.restaurantId ??
           (this.isStaffActor(user) ? user.rid : undefined));
 
-    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
-      throw new ForbiddenException('Restaurant context is required');
-    }
-
     const customer = await this.usersService.findCustomerById(id, {
       tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
       restaurantId,
+      ...(branchId ? { branchId } : {}),
     });
 
     if (!customer) {
@@ -197,6 +195,32 @@ export class AdminUsersService {
   async removeUser(user: AuthUserContext, id: string) {
     if (user.role !== UserRoleEnum.SUPER_ADMIN && !user.tid) {
       throw new ForbiddenException('Tenant context is required');
+    }
+
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      const targetUser = await this.usersService.findById(id);
+      if (!targetUser || targetUser.deletedAt) {
+        throw new NotFoundException('User not found');
+      }
+      if (targetUser.role !== 'CUSTOMER') {
+        throw new ForbiddenException(
+          'You do not have permission to delete this user',
+        );
+      }
+      const customer = await this.getAccessibleCustomerOrThrow(user, id);
+      const deletedCustomer = await this.usersService.softDeleteUser(
+        customer.id,
+      );
+      return {
+        data: {
+          id: deletedCustomer.id,
+          role: deletedCustomer.role,
+          isActive: deletedCustomer.isActive,
+          deletedAt: deletedCustomer.deletedAt,
+          deleteAfter: deletedCustomer.deleteAfter,
+        },
+        message: 'User scheduled for deletion in 30 days',
+      };
     }
 
     const targetUser = await this.usersService.findById(id);
@@ -480,16 +504,17 @@ export class AdminUsersService {
       throw new ForbiddenException('Tenant context is required');
     }
 
+    const branchId =
+      user.role === UserRoleEnum.BRANCH_ADMIN
+        ? await this.requireAssignedBranchId(user)
+        : undefined;
     const restaurantId =
       user.role === UserRoleEnum.BRANCH_ADMIN ? user.rid : undefined;
-
-    if (user.role === UserRoleEnum.BRANCH_ADMIN && !restaurantId) {
-      throw new ForbiddenException('Restaurant context is required');
-    }
 
     const customer = await this.usersService.findCustomerById(id, {
       tenantId: user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid,
       restaurantId,
+      ...(branchId ? { branchId } : {}),
     });
 
     if (!customer) {
@@ -498,6 +523,32 @@ export class AdminUsersService {
 
     this.assertStaffCustomerRestaurantAccess(user, customer.restaurantId);
     return customer;
+  }
+
+  private async requireAssignedBranchId(user: AuthUserContext) {
+    const branchId = user.bid ?? user.branchId;
+    if (!user.tid || !user.rid || !branchId) {
+      throw new ForbiddenException(
+        'Tenant, restaurant, and branch context are required',
+      );
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: {
+        id: branchId,
+        tenantId: user.tid,
+        restaurantId: user.rid,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!branch) {
+      throw new ForbiddenException(
+        'Branch admin is not assigned to an active branch',
+      );
+    }
+    return branch.id;
   }
 
   private assertStaffCustomerRestaurantAccess(

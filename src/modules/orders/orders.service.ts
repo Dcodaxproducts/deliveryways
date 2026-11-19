@@ -149,6 +149,7 @@ type QuoteLine = {
   categoryIds: string[];
   menuItemName: string;
   dealId?: string;
+  dealName?: string;
   variationId?: string;
   variationName?: string;
   quantity: number;
@@ -487,6 +488,7 @@ export class OrdersService {
                 line.snapshotModifiers,
                 line.snapshotSections,
                 line.dealId,
+                line.dealName,
               ) as unknown as Prisma.InputJsonValue,
             })),
           },
@@ -1227,6 +1229,20 @@ export class OrdersService {
           : null;
       }),
     );
+    const uniqueReadyMadeDealIds = [
+      ...new Set(
+        readyMadeDealIds.filter(
+          (dealId): dealId is string => typeof dealId === 'string',
+        ),
+      ),
+    ];
+    const readyMadeDealNames =
+      typeof this.couponsService.getDealDisplayNames === 'function'
+        ? await this.couponsService.getDealDisplayNames(
+            branch.restaurantId,
+            uniqueReadyMadeDealIds,
+          )
+        : new Map<string, string>();
     const lines: QuoteLine[] = [];
 
     for (const [itemIndex, requestedItem] of dto.items.entries()) {
@@ -1563,6 +1579,10 @@ export class OrdersService {
         categoryIds: this.itemCategoryIds(menuItem),
         menuItemName: menuItem.name,
         dealId: readyMadeDealId ?? requestedItem.dealId,
+        dealName: readyMadeDealId
+          ? (readyMadeDealNames.get(readyMadeDealId) ??
+            this.legacyDealDisplayName(readyMadeDealId))
+          : undefined,
         variationId: requestedItem.variationId,
         variationName,
         quantity: requestedItem.quantity,
@@ -5274,13 +5294,19 @@ export class OrdersService {
     modifiers?: QuoteLine['snapshotModifiers'],
     sections?: QuoteLine['snapshotSections'],
     dealId?: string,
+    dealName?: string,
   ) {
     if (!sections?.length && !dealId) {
       return modifiers?.length ? modifiers : [];
     }
 
     return {
-      ...(dealId ? { dealId } : {}),
+      ...(dealId
+        ? {
+            dealId,
+            dealName: dealName ?? `Deal ${dealId}`,
+          }
+        : {}),
       modifiers: modifiers?.length ? modifiers : [],
       ...(sections?.length ? { sections } : {}),
     };
@@ -5295,11 +5321,30 @@ export class OrdersService {
     return typeof dealId === 'string' && dealId.trim() ? dealId : null;
   }
 
+  private readSnapshotDealName(input: Prisma.JsonValue | null) {
+    const dealId = this.readSnapshotDealId(input);
+    if (!dealId) {
+      return null;
+    }
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      const dealName = (input as { dealName?: unknown }).dealName;
+      if (typeof dealName === 'string' && dealName.trim()) {
+        return dealName.trim();
+      }
+    }
+    return this.legacyDealDisplayName(dealId);
+  }
+
+  private legacyDealDisplayName(dealId: string) {
+    return `Deal ${dealId}`;
+  }
+
   private buildOrderDisplayItems(items: OrderDisplayItemSource[]) {
     const displayItems: Array<
       | {
           type: 'DEAL';
           dealId: string;
+          dealName: string;
           quantity: number;
           lineTotal: number;
           items: OrderDisplayItemResponse[];
@@ -5334,6 +5379,9 @@ export class OrdersService {
       displayItems.push({
         type: 'DEAL',
         dealId,
+        dealName:
+          this.readSnapshotDealName(item.snapshotModifiers) ??
+          this.legacyDealDisplayName(dealId),
         quantity: displayItem.quantity,
         lineTotal: displayItem.lineTotal,
         items: [displayItem],
