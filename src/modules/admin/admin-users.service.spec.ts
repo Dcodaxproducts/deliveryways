@@ -229,7 +229,7 @@ describe('AdminUsersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('scopes branch-admin customer mutations to the assigned branch', async () => {
+    it('forbids branch-admin global status mutations even for historically linked customers', async () => {
       const usersService = {
         findCustomerById: jest.fn().mockResolvedValue({
           id: 'customer-1',
@@ -250,23 +250,21 @@ describe('AdminUsersService', () => {
         } as never,
       );
 
-      await service.updateCustomerStatus(
-        {
-          uid: 'branch-admin-1',
-          role: UserRoleEnum.BRANCH_ADMIN,
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          branchId: 'branch-1',
-        } as never,
-        'customer-1',
-        { isActive: false },
-      );
-
-      expect(usersService.findCustomerById).toHaveBeenCalledWith('customer-1', {
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-        branchId: 'branch-1',
-      });
+      await expect(
+        service.updateCustomerStatus(
+          {
+            uid: 'branch-admin-1',
+            role: UserRoleEnum.BRANCH_ADMIN,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            branchId: 'branch-1',
+          } as never,
+          'customer-1',
+          { isActive: false },
+        ),
+      ).rejects.toThrow('Branch admins cannot mutate global customer accounts');
+      expect(usersService.findCustomerById).not.toHaveBeenCalled();
+      expect(usersService.setActiveStatus).not.toHaveBeenCalled();
     });
 
     it('returns not found when customer is outside scope', async () => {
@@ -514,7 +512,7 @@ describe('AdminUsersService', () => {
       );
     });
 
-    it('allows branch admin to soft delete a customer in the same restaurant', async () => {
+    it('forbids branch admin from deleting a customer linked by a historical branch order', async () => {
       const customer = {
         id: 'customer-1',
         role: UserRoleEnum.CUSTOMER,
@@ -542,23 +540,20 @@ describe('AdminUsersService', () => {
         } as never,
       );
 
-      await service.removeUser(
-        {
-          uid: 'branch-admin-1',
-          role: UserRoleEnum.BRANCH_ADMIN,
-          tid: 'tenant-1',
-          rid: 'restaurant-1',
-          bid: 'branch-1',
-        } as never,
-        'customer-1',
-      );
-
-      expect(usersService.findCustomerById).toHaveBeenCalledWith('customer-1', {
-        tenantId: 'tenant-1',
-        restaurantId: 'restaurant-1',
-        branchId: 'branch-1',
-      });
-      expect(usersService.softDeleteUser).toHaveBeenCalledWith('customer-1');
+      await expect(
+        service.removeUser(
+          {
+            uid: 'branch-admin-1',
+            role: UserRoleEnum.BRANCH_ADMIN,
+            tid: 'tenant-1',
+            rid: 'restaurant-1',
+            bid: 'branch-1',
+          } as never,
+          'customer-1',
+        ),
+      ).rejects.toThrow('Branch admins cannot mutate global customer accounts');
+      expect(usersService.findCustomerById).not.toHaveBeenCalled();
+      expect(usersService.softDeleteUser).not.toHaveBeenCalled();
     });
 
     it('prevents branch admin from deleting a branch admin user', async () => {

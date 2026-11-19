@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import {
   CouponCampaignKind,
   CouponDiscountType,
   CouponStatus,
+  Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { MenuIntegrationScope } from './menu-integration-catalog.port';
+
+const DEAL_DISCOVERY_BATCH_SIZE = 100;
+const DEAL_DISCOVERY_MAX = 500;
 
 @Injectable()
 export class MenuIntegrationCatalogRepository {
@@ -77,28 +81,56 @@ export class MenuIntegrationCatalogRepository {
 
   async listDeals(scope: MenuIntegrationScope) {
     const now = new Date();
-    return this.prisma.coupon.findMany({
-      where: {
-        tenantId: scope.tenantId,
-        restaurantId: scope.restaurantId,
-        kind: CouponCampaignKind.PROMOTION,
-        discountType: CouponDiscountType.FIXED_PRICE,
-        status: CouponStatus.ACTIVE,
-        isActive: true,
-        deletedAt: null,
-        AND: [
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-        ],
-        OR: [{ branchId: null }, { branchId: scope.branchId }],
-      },
-      orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }],
-      select: {
-        id: true,
-        title: true,
-        discountValue: true,
-        dealSelectionMode: true,
-      },
-    });
+    const where: Prisma.CouponWhereInput = {
+      tenantId: scope.tenantId,
+      restaurantId: scope.restaurantId,
+      kind: CouponCampaignKind.PROMOTION,
+      discountType: CouponDiscountType.FIXED_PRICE,
+      status: CouponStatus.ACTIVE,
+      isActive: true,
+      deletedAt: null,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+      ],
+      OR: [{ branchId: null }, { branchId: scope.branchId }],
+    };
+    const select = {
+      id: true,
+      title: true,
+      discountValue: true,
+      dealSelectionMode: true,
+    } as const;
+    const deals: Array<Prisma.CouponGetPayload<{ select: typeof select }>> = [];
+    let cursor: string | undefined;
+
+    while (deals.length < DEAL_DISCOVERY_MAX) {
+      const batch = await this.prisma.coupon.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { title: 'asc' }, { id: 'asc' }],
+        take: DEAL_DISCOVERY_BATCH_SIZE + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select,
+      });
+      const page = batch.slice(0, DEAL_DISCOVERY_BATCH_SIZE);
+      deals.push(...page);
+
+      if (batch.length <= DEAL_DISCOVERY_BATCH_SIZE) {
+        return deals;
+      }
+      if (deals.length >= DEAL_DISCOVERY_MAX) {
+        throw new ServiceUnavailableException(
+          'WinOrder deal discovery limit exceeded',
+        );
+      }
+      cursor = page[page.length - 1]?.id;
+      if (!cursor) {
+        throw new ServiceUnavailableException(
+          'WinOrder deal discovery pagination failed',
+        );
+      }
+    }
+
+    return deals;
   }
 }

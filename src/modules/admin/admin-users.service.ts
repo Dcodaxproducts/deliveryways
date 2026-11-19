@@ -117,6 +117,7 @@ export class AdminUsersService {
     id: string,
     dto: UpdateAdminCustomerDto,
   ) {
+    this.assertCustomerMutationAllowed(user);
     const customer = await this.getAccessibleCustomerOrThrow(user, id);
 
     if (dto.email && dto.email !== customer.email) {
@@ -162,6 +163,7 @@ export class AdminUsersService {
     id: string,
     dto: UpdateAdminCustomerStatusDto,
   ) {
+    this.assertCustomerMutationAllowed(user);
     const customer = await this.getAccessibleCustomerOrThrow(user, id);
 
     if (customer.isActive === dto.isActive) {
@@ -198,29 +200,9 @@ export class AdminUsersService {
     }
 
     if (user.role === UserRoleEnum.BRANCH_ADMIN) {
-      const targetUser = await this.usersService.findById(id);
-      if (!targetUser || targetUser.deletedAt) {
-        throw new NotFoundException('User not found');
-      }
-      if (targetUser.role !== 'CUSTOMER') {
-        throw new ForbiddenException(
-          'You do not have permission to delete this user',
-        );
-      }
-      const customer = await this.getAccessibleCustomerOrThrow(user, id);
-      const deletedCustomer = await this.usersService.softDeleteUser(
-        customer.id,
+      throw new ForbiddenException(
+        'Branch admins cannot mutate global customer accounts',
       );
-      return {
-        data: {
-          id: deletedCustomer.id,
-          role: deletedCustomer.role,
-          isActive: deletedCustomer.isActive,
-          deletedAt: deletedCustomer.deletedAt,
-          deleteAfter: deletedCustomer.deleteAfter,
-        },
-        message: 'User scheduled for deletion in 30 days',
-      };
     }
 
     const targetUser = await this.usersService.findById(id);
@@ -256,6 +238,7 @@ export class AdminUsersService {
   }
 
   async removeCustomer(user: AuthUserContext, id: string) {
+    this.assertCustomerMutationAllowed(user);
     const customer = await this.getAccessibleCustomerOrThrow(user, id);
     const deletedUser = await this.usersService.softDeleteUser(customer.id);
 
@@ -523,6 +506,14 @@ export class AdminUsersService {
 
     this.assertStaffCustomerRestaurantAccess(user, customer.restaurantId);
     return customer;
+  }
+
+  private assertCustomerMutationAllowed(user: AuthUserContext) {
+    if (user.role === UserRoleEnum.BRANCH_ADMIN) {
+      throw new ForbiddenException(
+        'Branch admins cannot mutate global customer accounts',
+      );
+    }
   }
 
   private async requireAssignedBranchId(user: AuthUserContext) {
