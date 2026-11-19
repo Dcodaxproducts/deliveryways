@@ -66,4 +66,30 @@ describe('InvoiceRecordsService', () => {
       recipientEmail: 'billing@restaurant.de',
     });
   });
+
+  it('does not downgrade a sent invoice or replace its finalized snapshot on a read', async () => {
+    let capturedUpdate: Record<string, unknown> = {};
+    const upsert = jest.fn((args: { update: Record<string, unknown> }) => {
+      capturedUpdate = args.update;
+      return Promise.resolve({ id: 'invoice-1' });
+    });
+    const create = jest.fn().mockResolvedValue({ id: 'event-1' });
+    const service = new InvoiceRecordsService({
+      generatedInvoice: { upsert },
+      generatedInvoiceEvent: { create },
+    } as never);
+
+    await service.persist({
+      invoiceNumber: 'PAYOUT-1',
+      kind: 'WEEKLY_PAYOUT' as never,
+      sourceKey: 'restaurant-1:week-1',
+      currency: 'EUR',
+      totalAmount: 100,
+      snapshot: { read: true },
+    });
+
+    expect(capturedUpdate.status).toBeUndefined();
+    expect(capturedUpdate.snapshot).toBeUndefined();
+    expect(capturedUpdate.totalAmount).toBeUndefined();
+  });
 });

@@ -1675,16 +1675,16 @@ describe('PackagePlansService', () => {
       toDate: '2026-06-15T00:00:00.000Z',
     });
 
-    expect(result.data.totals.monthlyFeeDeductedAmount).toBe(59.5);
-    expect(result.data.totals.restaurantPayoutAmount).toBe(40.5);
+    expect(result.data.totals.monthlyFeeDeductedAmount).toBe(39.75);
+    expect(result.data.totals.restaurantPayoutAmount).toBe(60.25);
     expect(result.data.monthlyBilling.months).toEqual([
       expect.objectContaining({
         monthlyFeeAmount: 159,
         monthlyFeeScheduledToDate: 79.5,
         monthlyFeeDeductedBefore: 20,
-        monthlyFeeDeductedThisPayout: 59.5,
-        monthlyFeeDeductedThisMonth: 79.5,
-        monthlyFeeOutstandingAmount: 79.5,
+        monthlyFeeDeductedThisPayout: 39.75,
+        monthlyFeeDeductedThisMonth: 59.75,
+        monthlyFeeOutstandingAmount: 99.25,
       }),
     ]);
   });

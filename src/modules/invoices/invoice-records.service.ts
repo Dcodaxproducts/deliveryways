@@ -87,18 +87,53 @@ export class InvoiceRecordsService {
             : null,
       },
       update: {
-        status,
-        snapshot: this.toJsonSnapshot(input.snapshot),
-        currency: input.currency,
-        totalAmount: new Prisma.Decimal(input.totalAmount).toDecimalPlaces(2),
-        periodFrom: input.periodFrom,
-        periodTo: input.periodTo,
-        tenantId: input.tenantId,
-        restaurantId: input.restaurantId,
-        branchId: input.branchId,
-        customerId: input.customerId,
-        orderId: input.orderId,
-        subscriptionId: input.subscriptionId,
+        // Read/PDF generation calls omit status. They may add an audit event but
+        // must never downgrade SENT or replace its finalized accounting snapshot.
+        status: input.status,
+        snapshot:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? this.toJsonSnapshot(input.snapshot)
+            : undefined,
+        currency:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.currency
+            : undefined,
+        totalAmount:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? new Prisma.Decimal(input.totalAmount).toDecimalPlaces(2)
+            : undefined,
+        periodFrom:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.periodFrom
+            : undefined,
+        periodTo:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.periodTo
+            : undefined,
+        tenantId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.tenantId
+            : undefined,
+        restaurantId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.restaurantId
+            : undefined,
+        branchId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.branchId
+            : undefined,
+        customerId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.customerId
+            : undefined,
+        orderId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.orderId
+            : undefined,
+        subscriptionId:
+          input.status === GeneratedInvoiceStatus.SENT
+            ? input.subscriptionId
+            : undefined,
         sentCount:
           eventType === GeneratedInvoiceEventType.EMAILED
             ? { increment: 1 }
