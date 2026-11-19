@@ -144,7 +144,7 @@ export class WinOrderPollingService {
       });
       if (item.dealId) {
         subArticles.unshift({
-          Comment: `Deal-Artikel (${item.dealId})`,
+          Comment: `Deal-Artikel: ${item.dealName ?? `Deal ${item.dealId}`}`,
           Count: 1,
         });
       }

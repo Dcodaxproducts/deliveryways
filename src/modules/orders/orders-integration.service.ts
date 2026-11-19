@@ -86,6 +86,7 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
         taxPercentage: item.menuItem.taxPercentage?.toNumber() ?? null,
         note: item.note,
         dealId: this.readDealId(item.snapshotModifiers),
+        dealName: this.readDealName(item.snapshotModifiers),
         modifiers: this.readModifiers(item.snapshotModifiers),
         sections: this.readSections(item.snapshotModifiers),
       })),
@@ -214,6 +215,17 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
   private readDealId(input: Prisma.JsonValue | null): string | null {
     const record = this.asRecord(input);
     return typeof record?.dealId === 'string' ? record.dealId : null;
+  }
+
+  private readDealName(input: Prisma.JsonValue | null): string | null {
+    const dealId = this.readDealId(input);
+    if (!dealId) {
+      return null;
+    }
+    const record = this.asRecord(input);
+    return typeof record?.dealName === 'string' && record.dealName.trim()
+      ? record.dealName.trim()
+      : `Deal ${dealId}`;
   }
 
   private readModifiers(

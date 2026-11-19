@@ -75,14 +75,17 @@ describe('OrdersIntegrationService', () => {
             lineTotal: new Prisma.Decimal(20),
             note: null,
             menuItem: { taxPercentage: new Prisma.Decimal(10) },
-            snapshotModifiers: [
-              {
-                modifierId: 'modifier-1',
-                name: 'Olives',
-                quantity: 1,
-                unitPrice: 2,
-              },
-            ],
+            snapshotModifiers: {
+              dealId: 'deal-legacy',
+              modifiers: [
+                {
+                  modifierId: 'modifier-1',
+                  name: 'Olives',
+                  quantity: 1,
+                  unitPrice: 2,
+                },
+              ],
+            },
           },
         ],
       },
@@ -104,6 +107,8 @@ describe('OrdersIntegrationService', () => {
     expect(result[0].items[0]).toEqual(
       expect.objectContaining({
         taxPercentage: 10,
+        dealId: 'deal-legacy',
+        dealName: 'Deal deal-legacy',
         modifiers: [
           {
             modifierId: 'modifier-1',

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { AddressRefType, OrderStatus, Prisma } from '@prisma/client';
+import { isRestaurantMenuAvailableAt } from '../../common/utils';
 import { PrismaService } from '../../database';
 import {
   HomeScreenQueryDto,
@@ -32,38 +33,8 @@ const publicMenuItemVariationCardSelect = {
   isActive: true,
 } satisfies Prisma.MenuItemVariationSelect;
 
-const publicMenuItemScheduleSelect = {
-  categoryId: true,
-  category: {
-    select: {
-      menuLinks: {
-        select: {
-          restaurantMenu: { select: restaurantMenuScheduleSelect },
-        },
-      },
-    },
-  },
-  categoryLinks: {
-    select: {
-      menuCategoryId: true,
-      menuCategory: {
-        select: {
-          menuLinks: {
-            select: {
-              restaurantMenu: { select: restaurantMenuScheduleSelect },
-            },
-          },
-        },
-      },
-    },
-  },
-  menuLinks: {
-    select: {
-      isActive: true,
-      restaurantMenu: { select: restaurantMenuScheduleSelect },
-    },
-  },
-} satisfies Prisma.MenuItemSelect;
+const PUBLIC_CUISINE_MENU_LIMIT = 500;
+const PUBLIC_CUISINE_CATEGORY_LIMIT_PER_CUISINE = 200;
 
 const publicMenuItemDetailVariationSelect = {
   id: true,
@@ -1319,10 +1290,81 @@ export class CustomerAppRepository {
     query: ListCuisinesQueryDto,
     scope?: { categoryIds?: string[]; includeItems?: boolean },
   ) {
+    if (!query.restaurantId) {
+      throw new ServiceUnavailableException('Restaurant context is required');
+    }
+
     const branchId = query.branchId;
     const categoryIds = scope?.categoryIds ?? [];
-    const includeItems = scope?.includeItems ?? false;
-    const itemVisibilityWhere: Prisma.MenuItemWhereInput = {
+    const menuSchedules = await this.prisma.restaurantMenu.findMany({
+      where: {
+        restaurantId: query.restaurantId,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true, isTimed: true, timingConfig: true },
+      orderBy: { id: 'asc' },
+      take: PUBLIC_CUISINE_MENU_LIMIT + 1,
+    });
+    if (menuSchedules.length > PUBLIC_CUISINE_MENU_LIMIT) {
+      throw new ServiceUnavailableException(
+        'Restaurant menu schedule limit exceeded',
+      );
+    }
+
+    const now = new Date();
+    const availableMenuIds = menuSchedules
+      .filter(
+        (menu) =>
+          !menu.isTimed || isRestaurantMenuAvailableAt(menu.timingConfig, now),
+      )
+      .map((menu) => menu.id);
+    const scheduleVisibilityWhere: Prisma.MenuItemWhereInput = {
+      OR: [
+        {
+          AND: [
+            { menuLinks: { none: {} } },
+            { category: { menuLinks: { none: {} } } },
+            {
+              categoryLinks: {
+                none: { menuCategory: { menuLinks: { some: {} } } },
+              },
+            },
+          ],
+        },
+        ...(availableMenuIds.length
+          ? ([
+              {
+                menuLinks: {
+                  some: {
+                    isActive: true,
+                    restaurantMenuId: { in: availableMenuIds },
+                  },
+                },
+              },
+              {
+                category: {
+                  menuLinks: {
+                    some: { restaurantMenuId: { in: availableMenuIds } },
+                  },
+                },
+              },
+              {
+                categoryLinks: {
+                  some: {
+                    menuCategory: {
+                      menuLinks: {
+                        some: { restaurantMenuId: { in: availableMenuIds } },
+                      },
+                    },
+                  },
+                },
+              },
+            ] satisfies Prisma.MenuItemWhereInput[])
+          : []),
+      ],
+    };
+    const baseItemVisibilityWhere: Prisma.MenuItemWhereInput = {
       restaurantId: query.restaurantId,
       deletedAt: null,
       isActive: true,
@@ -1338,6 +1380,9 @@ export class CustomerAppRepository {
             ],
           }
         : {}),
+    };
+    const itemVisibilityWhere: Prisma.MenuItemWhereInput = {
+      AND: [baseItemVisibilityWhere, scheduleVisibilityWhere],
     };
     const scopedCategoryWhere: Prisma.MenuItemWhereInput | undefined =
       categoryIds.length
@@ -1378,44 +1423,88 @@ export class CustomerAppRepository {
               },
             },
           },
-          itemLinks: {
-            where: { menuItem: itemVisibilityWhere },
-            orderBy: [{ sortOrder: 'asc' }],
-            select: {
-              sortOrder: true,
-              menuItem: {
-                select: includeItems
-                  ? publicMenuItemScheduleSelect
-                  : { categoryId: true, categoryLinks: true },
-              },
-            },
-          },
         },
       }),
       this.prisma.cuisine.count({ where }),
     ]);
+    const categoryIdsByCuisine = await this.loadCuisineCategoryIds(
+      items.map((item) => item.id),
+      query.restaurantId,
+      branchId,
+    );
 
     return {
-      items: items.map((item) => {
-        const categoryIdsForCuisine = new Set<string>();
-        for (const link of item.itemLinks) {
-          categoryIdsForCuisine.add(link.menuItem.categoryId);
-          for (const categoryLink of link.menuItem.categoryLinks ?? []) {
-            categoryIdsForCuisine.add(categoryLink.menuCategoryId);
-          }
-        }
-
-        return {
-          ...item,
-          categoryIds: [...categoryIdsForCuisine],
-          _count: { items: item._count.itemLinks },
-          items: includeItems
-            ? item.itemLinks.map((link) => link.menuItem)
-            : undefined,
-        };
-      }),
+      items: items.map((item) => ({
+        ...item,
+        categoryIds: categoryIdsByCuisine.get(item.id) ?? [],
+        _count: { items: item._count.itemLinks },
+      })),
       total,
     };
+  }
+
+  private async loadCuisineCategoryIds(
+    cuisineIds: string[],
+    restaurantId: string,
+    branchId?: string,
+  ): Promise<Map<string, string[]>> {
+    if (!cuisineIds.length) {
+      return new Map();
+    }
+
+    const rowLimit =
+      cuisineIds.length * PUBLIC_CUISINE_CATEGORY_LIMIT_PER_CUISINE;
+    const branchVisibility = branchId
+      ? Prisma.sql`AND (
+          NOT EXISTS (
+            SELECT 1 FROM branch_menu_item_overrides bmio
+            WHERE bmio.menu_item_id = mi.id AND bmio.branch_id = ${branchId}
+          )
+          OR EXISTS (
+            SELECT 1 FROM branch_menu_item_overrides bmio
+            WHERE bmio.menu_item_id = mi.id
+              AND bmio.branch_id = ${branchId}
+              AND bmio.is_available = true
+          )
+        )`
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<
+      Array<{ cuisineId: string; categoryId: string }>
+    >(Prisma.sql`
+      SELECT DISTINCT
+        mic.cuisine_id AS "cuisineId",
+        category_ids.category_id AS "categoryId"
+      FROM menu_item_cuisines mic
+      JOIN menu_items mi ON mi.id = mic.menu_item_id
+      CROSS JOIN LATERAL (
+        SELECT mi.category_id
+        UNION
+        SELECT micat.menu_category_id
+        FROM menu_item_categories micat
+        WHERE micat.menu_item_id = mi.id
+      ) category_ids
+      WHERE mic.cuisine_id IN (${Prisma.join(cuisineIds)})
+        AND mi.restaurant_id = ${restaurantId}
+        AND mi.deleted_at IS NULL
+        AND mi.is_active = true
+        ${branchVisibility}
+      ORDER BY mic.cuisine_id, category_ids.category_id
+      LIMIT ${rowLimit + 1}
+    `);
+
+    if (rows.length > rowLimit) {
+      throw new ServiceUnavailableException(
+        'Cuisine category detail limit exceeded',
+      );
+    }
+
+    const categoryIdsByCuisine = new Map<string, string[]>();
+    for (const row of rows) {
+      const values = categoryIdsByCuisine.get(row.cuisineId) ?? [];
+      values.push(row.categoryId);
+      categoryIdsByCuisine.set(row.cuisineId, values);
+    }
+    return categoryIdsByCuisine;
   }
 
   async findPublicCuisine(

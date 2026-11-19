@@ -27,6 +27,15 @@ export class CouponsRepository {
     return this.prisma.coupon.findUnique({ where: { id } });
   }
 
+  async findDealDisplayNames(restaurantId: string, dealIds: string[]) {
+    return this.prisma.coupon.findMany({
+      where: { restaurantId, id: { in: dealIds } },
+      select: { id: true, title: true },
+      orderBy: { id: 'asc' },
+      take: dealIds.length,
+    });
+  }
+
   async findByCode(restaurantId: string, code: string): Promise<Coupon | null> {
     return this.prisma.coupon.findFirst({
       where: {

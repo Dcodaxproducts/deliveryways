@@ -227,7 +227,7 @@ describe('OrdersService - delivery radius', () => {
     ).not.toThrow();
   });
 
-  it('persists deal id together with order item modifiers in snapshots', () => {
+  it('persists resolved deal names with deterministic legacy fallback', () => {
     const packOrderSelections = (
       service as unknown as {
         packOrderSelections: (
@@ -244,6 +244,7 @@ describe('OrdersService - delivery radius', () => {
             unitPrice: number;
           }>,
           dealId?: string,
+          dealName?: string,
         ) => unknown;
       }
     ).packOrderSelections;
@@ -260,9 +261,11 @@ describe('OrdersService - delivery radius', () => {
         ],
         undefined,
         'deal-1',
+        'Family Feast',
       ),
     ).toEqual({
       dealId: 'deal-1',
+      dealName: 'Family Feast',
       modifiers: [
         {
           modifierId: 'modifier-cola',
@@ -271,6 +274,11 @@ describe('OrdersService - delivery radius', () => {
           unitPrice: 100,
         },
       ],
+    });
+    expect(packOrderSelections([], undefined, 'legacy-deal')).toEqual({
+      dealId: 'legacy-deal',
+      dealName: 'Deal legacy-deal',
+      modifiers: [],
     });
   });
 
@@ -5556,6 +5564,7 @@ describe('OrdersService - response mapping', () => {
           note: null,
           snapshotModifiers: {
             dealId: 'deal-1',
+            dealName: 'Family Feast',
             modifiers: [
               {
                 modifierId: 'modifier-cola',
@@ -5618,6 +5627,7 @@ describe('OrdersService - response mapping', () => {
       expect.objectContaining({
         type: 'DEAL',
         dealId: 'deal-1',
+        dealName: 'Family Feast',
         quantity: 1,
         lineTotal: 800,
         items: [expect.objectContaining({ id: 'deal-item-1' })],

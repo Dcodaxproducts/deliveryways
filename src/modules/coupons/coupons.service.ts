@@ -98,6 +98,7 @@ export interface FixedPriceDealPricing {
 
 export interface FixedPriceDealItemOptions {
   dealId: string;
+  dealName: string;
   forcedVariationId: string | null;
 }
 
@@ -458,6 +459,19 @@ export class CouponsService {
     );
   }
 
+  async getDealDisplayNames(restaurantId: string, dealIds: string[]) {
+    const uniqueDealIds = [...new Set(dealIds)].sort();
+    if (!uniqueDealIds.length) {
+      return new Map<string, string>();
+    }
+
+    const deals = await this.couponsRepository.findDealDisplayNames(
+      restaurantId,
+      uniqueDealIds,
+    );
+    return new Map(deals.map((deal) => [deal.id, deal.title]));
+  }
+
   async isActiveFixedPriceDealItem(
     restaurantId: string,
     branchId: string | undefined,
@@ -579,7 +593,11 @@ export class CouponsService {
     }
 
     if (this.resolveFixedDealMenuItemIds(coupon).includes(menuItemId)) {
-      return { dealId: coupon.id, forcedVariationId: null };
+      return {
+        dealId: coupon.id,
+        dealName: coupon.title,
+        forcedVariationId: null,
+      };
     }
 
     const categoryScope = this.resolveFixedDealCategoryScopes(coupon).find(
@@ -589,6 +607,7 @@ export class CouponsService {
     return categoryScope
       ? {
           dealId: coupon.id,
+          dealName: coupon.title,
           forcedVariationId: categoryScope.forcedVariationId,
         }
       : null;

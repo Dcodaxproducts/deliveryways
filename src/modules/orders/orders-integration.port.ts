@@ -46,6 +46,7 @@ export interface IntegrationOrderItem {
   taxPercentage: number | null;
   note: string | null;
   dealId: string | null;
+  dealName?: string | null;
   modifiers: IntegrationOrderModifier[];
   sections: IntegrationOrderSection[];
 }
