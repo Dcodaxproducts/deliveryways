@@ -293,25 +293,47 @@ export function allocateMonthlyCommission(input: {
   ).toDecimalPlaces(2);
 }
 
+export function payoutOpportunitiesInLocalMonth(
+  payoutCycle: PackagePayoutCycle,
+  localMonth: string,
+): number {
+  if (payoutCycle === PackagePayoutCycle.MONTHLY) return 1;
+  if (payoutCycle === PackagePayoutCycle.BIWEEKLY) return 2;
+  // The client contract defines four weekly fee allocations per local month,
+  // independently of months that happen to contain a fifth weekday.
+  if (payoutCycle === PackagePayoutCycle.WEEKLY) return 4;
+
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(localMonth);
+  if (!match) throw new RangeError('Invalid local payout month');
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]), 0)).getUTCDate();
+}
+
 export function monthlyFeeInstallment(
   monthlyFee: Prisma.Decimal,
   payoutSequence: number,
+  payoutOpportunities = 4,
 ): Prisma.Decimal {
-  if (payoutSequence < 1 || payoutSequence > 4) {
+  if (
+    payoutOpportunities < 1 ||
+    !Number.isInteger(payoutOpportunities) ||
+    payoutSequence < 1 ||
+    payoutSequence > payoutOpportunities
+  ) {
     return new Prisma.Decimal(0);
   }
 
   const totalCents = monthlyFee
     .mul(100)
     .toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP);
-  const baseCents = totalCents.dividedToIntegerBy(4);
-  const remainderCents = totalCents.modulo(4).toNumber();
+  const baseCents = totalCents.dividedToIntegerBy(payoutOpportunities);
+  const remainderCents = totalCents.modulo(payoutOpportunities).toNumber();
 
   return baseCents.plus(payoutSequence <= remainderCents ? 1 : 0).div(100);
 }
 
 export function allocateMonthlyFee(input: {
   payoutSequence: number;
+  payoutOpportunities?: number;
   allocatedBefore: Prisma.Decimal;
   availableAfterOtherDeductions: Prisma.Decimal;
   monthlyFee: Prisma.Decimal;
@@ -320,13 +342,16 @@ export function allocateMonthlyFee(input: {
     input.monthlyFee.minus(input.allocatedBefore),
     0,
   );
-  const scheduled =
-    input.payoutSequence <= 4
-      ? Prisma.Decimal.min(
-          monthlyFeeInstallment(input.monthlyFee, input.payoutSequence),
-          outstanding,
-        )
-      : outstanding;
+  const payoutOpportunities = input.payoutOpportunities ?? 4;
+  const scheduledToDate = Array.from(
+    { length: Math.min(input.payoutSequence, payoutOpportunities) },
+    (_, index) =>
+      monthlyFeeInstallment(input.monthlyFee, index + 1, payoutOpportunities),
+  ).reduce((sum, amount) => sum.plus(amount), new Prisma.Decimal(0));
+  const scheduled = Prisma.Decimal.min(
+    Prisma.Decimal.max(scheduledToDate.minus(input.allocatedBefore), 0),
+    outstanding,
+  );
 
   return Prisma.Decimal.min(
     scheduled,

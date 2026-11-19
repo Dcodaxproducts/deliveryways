@@ -58,6 +58,7 @@ import {
   lastCompletedRestaurantPayoutPeriod,
   listRestaurantLocalMonths,
   nextRestaurantPayoutAt,
+  payoutOpportunitiesInLocalMonth,
   previousRestaurantPayoutAt,
   restaurantLocalMonthPeriod,
 } from './payout-accounting';
@@ -883,6 +884,10 @@ export class PackagePlansService {
       monthlyFeeAmount,
       currentMonthHistory.feePayoutCount,
       currentMonthHistory.monthlyFeeDeductedAmount,
+      payoutOpportunitiesInLocalMonth(
+        plan?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+        currentBillingMonth,
+      ),
     );
     const monthlyFeeVatMultiplier = new Prisma.Decimal(1).plus(
       vatPercentage.div(100),
@@ -1556,6 +1561,36 @@ export class PackagePlansService {
     }
   }
 
+  async retryDuePayoutInvoiceEmails(now = new Date()) {
+    this.ensureInvoiceAutomationConfigured();
+    const due = await this.packagePlansRepository.listDuePayoutInvoiceEmails(
+      now,
+      100,
+    );
+    const results = { sent: 0, failed: 0, skipped: 0 };
+    const systemUser = this.systemInvoiceUser();
+
+    for (const item of due) {
+      try {
+        const invoice = this.hydrateStoredPayoutInvoiceSnapshot(
+          item.generatedInvoice.snapshot,
+        );
+        const sent = await this.deliverWeeklyPayoutInvoice(
+          systemUser,
+          invoice,
+          item.recipientEmail,
+          item.generatedInvoiceId,
+        );
+        if (sent) results.sent += 1;
+        else results.skipped += 1;
+      } catch {
+        results.failed += 1;
+      }
+    }
+
+    return results;
+  }
+
   async emailDuePayoutInvoices(now = new Date()) {
     this.ensureInvoiceAutomationConfigured();
     const systemUser = this.systemInvoiceUser();
@@ -1974,10 +2009,15 @@ export class PackagePlansService {
         monthLineItems.map((item) => item.platformCommissionAmount),
       );
       const monthlyFeeAmount = this.resolveMonthlyPayoutFee(plan);
+      const payoutOpportunities = payoutOpportunitiesInLocalMonth(
+        plan?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+        month,
+      );
       const monthlyFeeScheduledToDate = this.resolveMonthlyFeeScheduledToDate(
         monthlyFeeAmount,
         history.feePayoutCount,
         history.monthlyFeeDeductedAmount,
+        payoutOpportunities,
       );
       const availablePayout = this.sumDecimalValues(
         monthLineItems.map((item) => item.restaurantPayoutAmount),
@@ -1987,6 +2027,7 @@ export class PackagePlansService {
       );
       let monthlyFeeDeductedThisPayout = allocateMonthlyFee({
         payoutSequence: history.feePayoutCount + 1,
+        payoutOpportunities,
         allocatedBefore: history.monthlyFeeDeductedAmount,
         availableAfterOtherDeductions: availablePayout.div(
           monthlyFeeVatMultiplier,
@@ -2307,7 +2348,7 @@ export class PackagePlansService {
           );
           monthlyFeeDeductedAmount =
             monthlyFeeDeductedAmount.plus(feeAllocated);
-          if (feeAllocated.greaterThan(0)) feePayoutCount += 1;
+          if (!invoice.sourceKey?.includes(':special:')) feePayoutCount += 1;
           continue;
         }
 
@@ -2404,6 +2445,7 @@ export class PackagePlansService {
     monthlyFeeAmount: Prisma.Decimal,
     feePayoutCount: number,
     allocatedBefore: Prisma.Decimal,
+    payoutOpportunities: number,
   ) {
     if (monthlyFeeAmount.lessThanOrEqualTo(0)) {
       return new Prisma.Decimal(0);
@@ -2412,6 +2454,7 @@ export class PackagePlansService {
       .plus(
         allocateMonthlyFee({
           payoutSequence: feePayoutCount + 1,
+          payoutOpportunities,
           allocatedBefore,
           availableAfterOtherDeductions: monthlyFeeAmount,
           monthlyFee: monthlyFeeAmount,
@@ -3924,7 +3967,7 @@ export class PackagePlansService {
       generatedInvoiceId,
       new Date(),
     );
-    if (!claimed) return false;
+    if (!claimed || !claimed.claimToken) return false;
     const deliveryRecipient = claimed.recipientEmail;
 
     try {
@@ -3942,21 +3985,33 @@ export class PackagePlansService {
               contentType: 'application/pdf',
             },
           ],
+          messageId: `<${claimed.providerMessageKey}>`,
         },
       );
-      await this.packagePlansRepository.markPayoutInvoiceEmailSent({
-        outboxId: claimed.id,
-        generatedInvoiceId,
-        recipientEmail: deliveryRecipient,
-        actorId: user.uid,
-        sentAt: new Date(),
-      });
+      const markedSent =
+        await this.packagePlansRepository.markPayoutInvoiceEmailSent({
+          outboxId: claimed.id,
+          generatedInvoiceId,
+          recipientEmail: deliveryRecipient,
+          actorId: user.uid,
+          claimToken: claimed.claimToken,
+          providerMessageKey: claimed.providerMessageKey,
+          sentAt: new Date(),
+        });
+      if (!markedSent) {
+        throw new Error(
+          'Payout email lease expired before delivery was recorded',
+        );
+      }
       return true;
     } catch (error) {
-      await this.packagePlansRepository.markPayoutInvoiceEmailFailed(
-        claimed.id,
-        error instanceof Error ? error.message : 'Email delivery failed',
-      );
+      await this.packagePlansRepository.markPayoutInvoiceEmailFailed({
+        outboxId: claimed.id,
+        claimToken: claimed.claimToken,
+        attempts: claimed.attempts,
+        failedAt: new Date(),
+        error: error instanceof Error ? error.message : 'Email delivery failed',
+      });
       throw error;
     }
   }
@@ -4055,6 +4110,11 @@ export class PackagePlansService {
             allocationSourceKey,
             commission: month.commissionDeductedThisPayout,
             monthlyFee: month.monthlyFeeDeductedThisPayout,
+            payoutCycle: invoice.subscription.payoutCycle,
+            payoutOpportunities: payoutOpportunitiesInLocalMonth(
+              invoice.subscription.payoutCycle,
+              month.month,
+            ),
             payout: availablePayoutAmount.toString(),
           }),
         )
@@ -4087,6 +4147,11 @@ export class PackagePlansService {
         vatPercentage: new Prisma.Decimal(invoice.subscription.vatPercentage),
         monthlyFeeAmount: new Prisma.Decimal(
           invoice.subscription.monthlyFeeAmount,
+        ),
+        payoutCycle: invoice.subscription.payoutCycle,
+        payoutOpportunities: payoutOpportunitiesInLocalMonth(
+          invoice.subscription.payoutCycle,
+          month.month,
         ),
         snapshotHash,
         expectedCommissionAmount: new Prisma.Decimal(

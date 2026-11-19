@@ -94,8 +94,8 @@ export class MailerService {
     to: string,
     subject: string,
     text: string,
-    options?: Pick<SendMailOptions, 'attachments'>,
-  ): Promise<void> {
+    options?: Pick<SendMailOptions, 'attachments' | 'messageId'>,
+  ): Promise<{ messageId: string }> {
     if (!this.isEmailEnabled()) {
       this.logger.warn(
         `EMAIL_ENABLED=false, using json transport for email to ${to}`,
@@ -108,9 +108,11 @@ export class MailerService {
       subject,
       text,
       attachments: options?.attachments,
+      messageId: options?.messageId,
     });
 
     this.logger.log(`Email queued for ${to} with subject "${subject}"`);
+    return { messageId: String(options?.messageId ?? '') };
   }
 
   async sendVerificationEmail(

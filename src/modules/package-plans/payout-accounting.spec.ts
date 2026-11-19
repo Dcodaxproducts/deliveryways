@@ -10,6 +10,7 @@ import {
   listRestaurantLocalMonths,
   monthlyFeeInstallment,
   nextRestaurantPayoutAt,
+  payoutOpportunitiesInLocalMonth,
   previousRestaurantPayoutAt,
   restaurantLocalMonthPeriod,
   toRestaurantLocalMonth,
@@ -53,7 +54,7 @@ describe('payout accounting', () => {
     );
   });
 
-  it('carries a shortfall within the month and lets only the fifth payout catch it up', () => {
+  it('catches a shortfall up on the next configured payout without overcharging', () => {
     const monthlyFee = new Prisma.Decimal(159);
     const first = allocateMonthlyFee({
       payoutSequence: 1,
@@ -74,7 +75,7 @@ describe('payout accounting', () => {
       monthlyFee,
     });
     expect([first.toNumber(), second.toNumber(), fifth.toNumber()]).toEqual([
-      10, 39.75, 29.75,
+      10, 69.5, 0,
     ]);
   });
 
@@ -87,6 +88,56 @@ describe('payout accounting', () => {
         monthlyFee: new Prisma.Decimal(159),
       }).toNumber(),
     ).toBe(39.75);
+  });
+
+  it.each([
+    [PackagePayoutCycle.WEEKLY, '2026-01', 4],
+    [PackagePayoutCycle.BIWEEKLY, '2026-01', 2],
+    [PackagePayoutCycle.MONTHLY, '2026-01', 1],
+    [PackagePayoutCycle.DAILY, '2026-02', 28],
+    [PackagePayoutCycle.DAILY, '2024-02', 29],
+    [PackagePayoutCycle.DAILY, '2026-04', 30],
+    [PackagePayoutCycle.DAILY, '2026-01', 31],
+  ])(
+    'allocates %s over %s using %i exact-cent opportunities',
+    (cycle, month, opportunities) => {
+      expect(payoutOpportunitiesInLocalMonth(cycle, month)).toBe(opportunities);
+      let allocated = new Prisma.Decimal(0);
+      const amounts = Array.from({ length: opportunities }, (_, index) => {
+        const amount = allocateMonthlyFee({
+          payoutSequence: index + 1,
+          payoutOpportunities: opportunities,
+          allocatedBefore: allocated,
+          availableAfterOtherDeductions: new Prisma.Decimal(1000),
+          monthlyFee: new Prisma.Decimal('79.07'),
+        });
+        allocated = allocated.plus(amount);
+        return amount;
+      });
+      expect(allocated.toFixed(2)).toBe('79.07');
+      expect(amounts.every((amount) => amount.decimalPlaces() <= 2)).toBe(true);
+    },
+  );
+
+  it('applies plan changes to the remaining monthly balance without resetting prior charges', () => {
+    expect(
+      allocateMonthlyFee({
+        payoutSequence: 2,
+        payoutOpportunities: 2,
+        allocatedBefore: new Prisma.Decimal('39.75'),
+        availableAfterOtherDeductions: new Prisma.Decimal(1000),
+        monthlyFee: new Prisma.Decimal(100),
+      }).toFixed(2),
+    ).toBe('60.25');
+    expect(
+      allocateMonthlyFee({
+        payoutSequence: 2,
+        payoutOpportunities: 2,
+        allocatedBefore: new Prisma.Decimal('39.75'),
+        availableAfterOtherDeductions: new Prisma.Decimal(1000),
+        monthlyFee: new Prisma.Decimal(20),
+      }).toFixed(2),
+    ).toBe('0.00');
   });
 
   it('supports fixed commission and an unlimited percentage cap', () => {

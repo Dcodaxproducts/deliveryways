@@ -13,9 +13,20 @@ export class PackagePlansInvoiceAutomationService {
   @Cron(CronExpression.EVERY_HOUR)
   async processInvoiceAutomation() {
     const now = new Date();
+    const retries =
+      await this.packagePlansService.retryDuePayoutInvoiceEmails(now);
+    const payouts = await this.packagePlansService.emailDuePayoutInvoices(now);
     const subscriptions =
       await this.packagePlansService.emailDueSubscriptionInvoices(now);
 
+    if (retries.sent > 0 || retries.failed > 0) {
+      this.logger.log(
+        `Payout email outbox: sent=${retries.sent}, failed=${retries.failed}, skipped=${retries.skipped}`,
+      );
+    }
+    if (payouts.sent > 0) {
+      this.logger.log(`Auto payout invoice emails sent: ${payouts.sent}`);
+    }
     if (subscriptions.sent > 0) {
       this.logger.log(
         `Auto subscription invoice emails sent: ${subscriptions.sent}`,

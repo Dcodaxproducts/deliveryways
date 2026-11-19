@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
@@ -8,6 +9,7 @@ import {
   PaymentTransactionType,
   PackageBillingModel,
   PackageCommissionType,
+  PackagePayoutCycle,
   Prisma,
   RestaurantWalletTransactionType,
   SubscriptionDeductionStatus,
@@ -49,6 +51,8 @@ export interface MonthlyPayoutAllocationInput {
   commissionFixedAmount: Prisma.Decimal;
   vatPercentage: Prisma.Decimal;
   monthlyFeeAmount: Prisma.Decimal;
+  payoutCycle: PackagePayoutCycle;
+  payoutOpportunities: number;
   snapshotHash: string;
   expectedCommissionAmount: Prisma.Decimal;
   expectedMonthlyFeeAmount: Prisma.Decimal;
@@ -779,6 +783,26 @@ export class PackagePlansRepository {
     });
   }
 
+  listDuePayoutInvoiceEmails(now: Date, take = 100) {
+    return this.prisma.payoutInvoiceEmailOutbox.findMany({
+      where: {
+        sentAt: null,
+        deliveryState: { not: 'FAILED' },
+        OR: [
+          { deliveryState: 'SENDING', claimExpiresAt: { lte: now } },
+          {
+            claimToken: null,
+            attempts: { lt: 8 },
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
+        ],
+      },
+      take,
+      orderBy: [{ nextAttemptAt: 'asc' }, { createdAt: 'asc' }],
+      include: { generatedInvoice: { select: { id: true, snapshot: true } } },
+    });
+  }
+
   findFinalizedPayoutInvoice(sourceKey: string) {
     return this.prisma.generatedInvoice.findFirst({
       where: {
@@ -921,9 +945,22 @@ export class PackagePlansRepository {
                 commissionCapAmount: input.commissionCapAmount,
                 vatPercentage: input.vatPercentage,
                 monthlyFeeAmount: input.monthlyFeeAmount,
+                payoutCycle: input.payoutCycle,
+                payoutOpportunities: input.payoutOpportunities,
                 monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
               },
-              update: {},
+              update: {
+                packagePlanId: input.packagePlanId,
+                billingModel: input.billingModel,
+                commissionType: input.commissionType,
+                commissionPercentage: input.commissionPercentage,
+                commissionFixedAmount: input.commissionFixedAmount,
+                commissionCapAmount: input.commissionCapAmount,
+                vatPercentage: input.vatPercentage,
+                monthlyFeeAmount: input.monthlyFeeAmount,
+                payoutCycle: input.payoutCycle,
+                payoutOpportunities: input.payoutOpportunities,
+              },
             });
             if (ledger.finalizedAt)
               throw new WalletSettlementConflictError(
@@ -936,7 +973,7 @@ export class PackagePlansRepository {
             const feePayoutCount = await tx.restaurantPayoutAllocation.count({
               where: {
                 ledgerId: ledger.id,
-                monthlyFeeAmount: { gt: 0 },
+                isSpecialPayout: false,
               },
             });
             const commissionAmount = input.isSpecialPayout
@@ -954,6 +991,7 @@ export class PackagePlansRepository {
               ? new Prisma.Decimal(0)
               : allocateMonthlyFee({
                   payoutSequence: feePayoutCount + 1,
+                  payoutOpportunities: ledger.payoutOpportunities,
                   allocatedBefore: ledger.monthlyFeeAllocatedAmount,
                   availableAfterOtherDeductions:
                     input.availableForMonthlyFeeAmount,
@@ -1134,6 +1172,7 @@ export class PackagePlansRepository {
                     generatedInvoiceId: invoice.id,
                     recipientEmail: input.recipientEmail,
                     actorId: input.actorId,
+                    providerMessageKey: `payout-invoice-${invoice.id}@deliveryways.app`,
                   },
                 })
               : null;
@@ -1152,15 +1191,34 @@ export class PackagePlansRepository {
   }
 
   async claimPayoutInvoiceEmail(generatedInvoiceId: string, claimedAt: Date) {
+    const claimToken = randomUUID();
+    const claimExpiresAt = new Date(claimedAt.getTime() + 5 * 60 * 1000);
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.payoutInvoiceEmailOutbox.updateMany({
         where: {
           generatedInvoiceId,
-          claimedAt: null,
           sentAt: null,
+          deliveryState: { not: 'FAILED' },
+          OR: [
+            {
+              deliveryState: 'SENDING',
+              claimExpiresAt: { lte: claimedAt },
+            },
+            {
+              claimToken: null,
+              attempts: { lt: 8 },
+              OR: [
+                { nextAttemptAt: null },
+                { nextAttemptAt: { lte: claimedAt } },
+              ],
+            },
+          ],
         },
         data: {
+          deliveryState: 'SENDING',
           claimedAt,
+          claimToken,
+          claimExpiresAt,
           attempts: { increment: 1 },
           lastError: null,
         },
@@ -1172,12 +1230,33 @@ export class PackagePlansRepository {
     });
   }
 
-  markPayoutInvoiceEmailFailed(outboxId: string, error: string) {
-    return this.prisma.payoutInvoiceEmailOutbox.update({
-      where: { id: outboxId },
+  markPayoutInvoiceEmailFailed(input: {
+    outboxId: string;
+    claimToken: string;
+    attempts: number;
+    failedAt: Date;
+    error: string;
+  }) {
+    const backoffSeconds = Math.min(
+      30 * 2 ** Math.max(input.attempts - 1, 0),
+      3600,
+    );
+    return this.prisma.payoutInvoiceEmailOutbox.updateMany({
+      where: {
+        id: input.outboxId,
+        claimToken: input.claimToken,
+        sentAt: null,
+      },
       data: {
+        deliveryState: input.attempts >= 8 ? 'FAILED' : 'RETRY_WAIT',
         claimedAt: null,
-        lastError: error.slice(0, 1000),
+        claimToken: null,
+        claimExpiresAt: null,
+        nextAttemptAt:
+          input.attempts >= 8
+            ? null
+            : new Date(input.failedAt.getTime() + backoffSeconds * 1000),
+        lastError: input.error.slice(0, 1000),
       },
     });
   }
@@ -1187,6 +1266,8 @@ export class PackagePlansRepository {
     generatedInvoiceId: string;
     recipientEmail: string;
     actorId?: string | null;
+    claimToken: string;
+    providerMessageKey: string;
     sentAt: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -1194,10 +1275,18 @@ export class PackagePlansRepository {
         where: {
           id: input.outboxId,
           generatedInvoiceId: input.generatedInvoiceId,
-          claimedAt: { not: null },
+          claimToken: input.claimToken,
+          claimExpiresAt: { gt: input.sentAt },
           sentAt: null,
         },
-        data: { sentAt: input.sentAt },
+        data: {
+          deliveryState: 'SENT',
+          providerAcceptedAt: input.sentAt,
+          sentAt: input.sentAt,
+          claimToken: null,
+          claimExpiresAt: null,
+          nextAttemptAt: null,
+        },
       });
       if (marked.count !== 1) return false;
       await tx.generatedInvoice.update({
@@ -1214,7 +1303,10 @@ export class PackagePlansRepository {
           eventType: GeneratedInvoiceEventType.EMAILED,
           actorId: input.actorId,
           recipientEmail: input.recipientEmail,
-          metadata: { outboxId: input.outboxId },
+          metadata: {
+            outboxId: input.outboxId,
+            providerMessageKey: input.providerMessageKey,
+          },
         },
       });
       return true;
@@ -1266,9 +1358,22 @@ export class PackagePlansRepository {
         commissionCapAmount: input.commissionCapAmount,
         vatPercentage: input.vatPercentage,
         monthlyFeeAmount: input.monthlyFeeAmount,
+        payoutCycle: input.payoutCycle,
+        payoutOpportunities: input.payoutOpportunities,
         monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
       },
-      update: {},
+      update: {
+        packagePlanId: input.packagePlanId,
+        billingModel: input.billingModel,
+        commissionType: input.commissionType,
+        commissionPercentage: input.commissionPercentage,
+        commissionFixedAmount: input.commissionFixedAmount,
+        commissionCapAmount: input.commissionCapAmount,
+        vatPercentage: input.vatPercentage,
+        monthlyFeeAmount: input.monthlyFeeAmount,
+        payoutCycle: input.payoutCycle,
+        payoutOpportunities: input.payoutOpportunities,
+      },
     });
     if (ledger.finalizedAt) {
       throw new WalletSettlementConflictError(
@@ -1280,7 +1385,7 @@ export class PackagePlansRepository {
         where: { ledgerId: ledger.id },
       })) + 1;
     const feePayoutCount = await tx.restaurantPayoutAllocation.count({
-      where: { ledgerId: ledger.id, monthlyFeeAmount: { gt: 0 } },
+      where: { ledgerId: ledger.id, isSpecialPayout: false },
     });
     const commissionAmount = input.isSpecialPayout
       ? new Prisma.Decimal(0)
@@ -1297,6 +1402,7 @@ export class PackagePlansRepository {
       ? new Prisma.Decimal(0)
       : allocateMonthlyFee({
           payoutSequence: feePayoutCount + 1,
+          payoutOpportunities: ledger.payoutOpportunities,
           allocatedBefore: ledger.monthlyFeeAllocatedAmount,
           availableAfterOtherDeductions: input.availableForMonthlyFeeAmount,
           monthlyFee: ledger.monthlyFeeAmount,
