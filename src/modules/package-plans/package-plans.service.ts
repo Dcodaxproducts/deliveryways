@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -50,6 +50,7 @@ import {
   WeeklyRestaurantPayoutInvoiceQueryDto,
 } from './dto';
 import { PackagePlansRepository } from './package-plans.repository';
+import { nextRestaurantPayoutAt } from './payout-accounting';
 
 type TenantSubscriptionDetails = NonNullable<
   Awaited<ReturnType<PackagePlansRepository['findSubscriptionById']>>
@@ -1111,23 +1112,67 @@ export class PackagePlansService {
     dto: SendWeeklyRestaurantPayoutInvoiceDto,
   ) {
     this.ensureSuperAdmin(user);
-    const invoice = await this.buildWeeklyPayoutInvoice(dto);
-    const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
-
-    if (!recipientEmail) {
+    const boundaryTo = dto.toDate ? new Date(dto.toDate) : new Date();
+    const supportsScheduleLock =
+      typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+      'function';
+    const lockToken = randomUUID();
+    const schedule = supportsScheduleLock
+      ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+          restaurantId: dto.restaurantId,
+          lockToken,
+          now: boundaryTo,
+          lockExpiresAt: new Date(boundaryTo.getTime() + 15 * 60 * 1000),
+        })
+      : null;
+    if (supportsScheduleLock && !schedule) {
       throw new BadRequestException(
-        'Restaurant billing email is required to send payout invoice',
+        'A payout is already being finalized for this restaurant',
       );
     }
+    const invoice = await this.buildWeeklyPayoutInvoice({
+      ...dto,
+      fromDate: schedule?.lastFinalizedAt?.toISOString() ?? dto.fromDate,
+      toDate: boundaryTo.toISOString(),
+    });
+    const recipientEmail = dto.email ?? invoice.restaurant.billingEmail;
 
-    if (!this.mailerService) {
+    if (!recipientEmail || !this.mailerService) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          dto.restaurantId,
+          lockToken,
+        );
+      }
+      if (!recipientEmail) {
+        throw new BadRequestException(
+          'Restaurant billing email is required to send payout invoice',
+        );
+      }
       throw new InternalServerErrorException(
         'Mailer service is not configured',
       );
     }
 
     const fileName = `${invoice.invoiceNumber}.pdf`;
-    await this.deliverWeeklyPayoutInvoice(user, invoice, recipientEmail);
+    try {
+      await this.deliverWeeklyPayoutInvoice(user, invoice, recipientEmail);
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+          restaurantId: dto.restaurantId,
+          lockToken,
+          finalizedAt: boundaryTo,
+        });
+      }
+    } catch (error) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          dto.restaurantId,
+          lockToken,
+        );
+      }
+      throw error;
+    }
 
     return {
       data: {
@@ -1162,10 +1207,24 @@ export class PackagePlansService {
       return null;
     }
 
+    const supportsScheduleLock =
+      typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+      'function';
+    const lockToken = randomUUID();
+    const schedule = supportsScheduleLock
+      ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+          restaurantId: input.restaurantId,
+          lockToken,
+          now: input.paidAt,
+          lockExpiresAt: new Date(input.paidAt.getTime() + 15 * 60 * 1000),
+        })
+      : null;
+    if (supportsScheduleLock && !schedule) return null;
+
     const periodTo = new Date(input.paidAt.getTime() + 1);
     const invoice = await this.buildWeeklyPayoutInvoice({
       restaurantId: input.restaurantId,
-      fromDate: new Date(0).toISOString(),
+      fromDate: (schedule?.lastFinalizedAt ?? new Date(0)).toISOString(),
       toDate: periodTo.toISOString(),
     });
     let remaining = input.amount.toDecimalPlaces(2);
@@ -1187,7 +1246,15 @@ export class PackagePlansService {
       remaining = remaining.minus(payoutAmount);
     }
 
-    if (lineItems.length === 0) return null;
+    if (lineItems.length === 0) {
+      if (supportsScheduleLock) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          input.restaurantId,
+          lockToken,
+        );
+      }
+      return null;
+    }
 
     const specialInvoice = {
       ...invoice,
@@ -1198,11 +1265,8 @@ export class PackagePlansService {
       ),
       issuedAt: input.paidAt,
       period: {
-        from:
-          lineItems[0]?.paidAt instanceof Date
-            ? lineItems[0].paidAt
-            : invoice.period.from,
-        to: periodTo,
+        from: schedule?.lastFinalizedAt ?? invoice.period.from,
+        to: input.paidAt,
       },
       lineItems,
       sourceKey,
@@ -1253,6 +1317,13 @@ export class PackagePlansService {
       specialInvoice,
       { status: GeneratedInvoiceStatus.SENT },
     );
+    if (supportsScheduleLock) {
+      await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+        restaurantId: input.restaurantId,
+        lockToken,
+        finalizedAt: input.paidAt,
+      });
+    }
 
     return specialInvoice;
   }
@@ -1422,44 +1493,118 @@ export class PackagePlansService {
       }
 
       const plan = this.resolveSubscriptionInvoicePlan(subscription);
-      const period = this.resolveLastCompletedPayoutPeriod(
+      const restaurant =
+        await this.packagePlansRepository.findRestaurantPayoutScope(
+          subscription.restaurantId,
+        );
+      if (!restaurant) {
+        results.skipped += 1;
+        continue;
+      }
+      const supportsScheduleLock =
+        typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+        'function';
+      const lockToken = randomUUID();
+      const schedule = supportsScheduleLock
+        ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+            restaurantId: subscription.restaurantId,
+            lockToken,
+            now,
+            lockExpiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+          })
+        : null;
+      if (supportsScheduleLock && !schedule) {
+        results.skipped += 1;
+        continue;
+      }
+
+      const fallbackPeriod = this.resolveLastCompletedPayoutPeriod(
         plan.payoutCycle,
         now,
       );
-      const invoice = await this.buildWeeklyPayoutInvoice({
-        restaurantId: subscription.restaurantId,
-        fromDate: period.from.toISOString(),
-        toDate: period.to.toISOString(),
-      });
-      const recipientEmail = invoice.restaurant.billingEmail;
-      const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
-      const hasPayoutActivity =
-        invoice.totals.ordersCount > 0 ||
-        invoice.totals.monthlyFeeDeductedAmount > 0;
-
-      if (
-        !hasPayoutActivity ||
-        (await this.invoiceRecordsService?.hasRecord(
-          GeneratedInvoiceKind.WEEKLY_PAYOUT,
-          sourceKey,
-        ))
-      ) {
+      const timezone = this.resolveRestaurantPayoutTimezone(restaurant);
+      const nextAutomaticAt = schedule?.lastFinalizedAt
+        ? nextRestaurantPayoutAt(
+            schedule.lastFinalizedAt,
+            plan.payoutCycle,
+            timezone,
+          )
+        : fallbackPeriod.to;
+      if (schedule?.lastFinalizedAt && now < nextAutomaticAt) {
+        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+          subscription.restaurantId,
+          lockToken,
+        );
         results.skipped += 1;
         continue;
       }
+      const period = schedule?.lastFinalizedAt
+        ? { from: schedule.lastFinalizedAt, to: nextAutomaticAt }
+        : fallbackPeriod;
 
-      if (!recipientEmail) {
-        await this.persistWeeklyPayoutInvoice(systemUser, invoice);
-        results.skipped += 1;
-        continue;
+      try {
+        const invoice = await this.buildWeeklyPayoutInvoice({
+          restaurantId: subscription.restaurantId,
+          fromDate: period.from.toISOString(),
+          toDate: period.to.toISOString(),
+        });
+        const recipientEmail = invoice.restaurant.billingEmail;
+        const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
+        const hasPayoutActivity =
+          invoice.totals.ordersCount > 0 ||
+          invoice.totals.monthlyFeeDeductedAmount > 0;
+
+        if (
+          !hasPayoutActivity ||
+          (await this.invoiceRecordsService?.hasRecord(
+            GeneratedInvoiceKind.WEEKLY_PAYOUT,
+            sourceKey,
+          ))
+        ) {
+          if (supportsScheduleLock) {
+            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+              subscription.restaurantId,
+              lockToken,
+            );
+          }
+          results.skipped += 1;
+          continue;
+        }
+
+        if (!recipientEmail) {
+          await this.persistWeeklyPayoutInvoice(systemUser, invoice);
+          if (supportsScheduleLock) {
+            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+              subscription.restaurantId,
+              lockToken,
+            );
+          }
+          results.skipped += 1;
+          continue;
+        }
+
+        await this.deliverWeeklyPayoutInvoice(
+          systemUser,
+          invoice,
+          recipientEmail,
+        );
+        if (supportsScheduleLock) {
+          await this.packagePlansRepository.finalizeRestaurantPayoutSchedule({
+            restaurantId: subscription.restaurantId,
+            lockToken,
+            finalizedAt: period.to,
+          });
+        }
+        results.sent += 1;
+      } catch (error) {
+        if (supportsScheduleLock) {
+          await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+            subscription.restaurantId,
+            lockToken,
+          );
+        }
+        throw error;
       }
-
-      await this.deliverWeeklyPayoutInvoice(
-        systemUser,
-        invoice,
-        recipientEmail,
-      );
-      results.sent += 1;
     }
 
     return results;
@@ -1805,10 +1950,20 @@ export class PackagePlansService {
       subscription: subscription
         ? {
             id: subscription.id,
+            packagePlanId: plan?.id ?? subscription.packagePlanId,
+            billingModel: plan?.billingModel ?? PackageBillingModel.PLAN,
             billingInterval: plan?.billingInterval ?? BillingInterval.MONTHLY,
             payoutCycle: plan?.payoutCycle ?? PackagePayoutCycle.WEEKLY,
+            commissionType:
+              plan?.commissionType ?? PackageCommissionType.PERCENTAGE,
             commissionPercentage: Number(plan?.commissionPercentage ?? 0),
-            commissionCapAmount: Number(plan?.commissionCapAmount ?? 0),
+            commissionFixedAmount: Number(plan?.commissionFixedAmount ?? 0),
+            commissionCapAmount:
+              plan?.commissionCapAmount === null ||
+              plan?.commissionCapAmount === undefined
+                ? null
+                : Number(plan.commissionCapAmount),
+            vatPercentage: Number(plan?.vatPercentage ?? 0),
             monthlyFeeAmount: Number(this.resolveMonthlyPayoutFee(plan)),
           }
         : null,
@@ -3693,13 +3848,22 @@ export class PackagePlansService {
         currency: invoice.totals.currency,
         sourceKey: allocationSourceKey,
         grossCommissionableAmount,
+        commissionableOrderCount: monthLines.length,
         availablePayoutAmount,
-        commissionCapAmount: new Prisma.Decimal(
-          invoice.subscription.commissionCapAmount,
-        ),
+        packagePlanId: invoice.subscription.packagePlanId,
+        billingModel: invoice.subscription.billingModel,
+        commissionType: invoice.subscription.commissionType,
+        commissionCapAmount:
+          invoice.subscription.commissionCapAmount === null
+            ? null
+            : new Prisma.Decimal(invoice.subscription.commissionCapAmount),
         commissionPercentage: new Prisma.Decimal(
           invoice.subscription.commissionPercentage,
         ),
+        commissionFixedAmount: new Prisma.Decimal(
+          invoice.subscription.commissionFixedAmount,
+        ),
+        vatPercentage: new Prisma.Decimal(invoice.subscription.vatPercentage),
         monthlyFeeAmount: new Prisma.Decimal(
           invoice.subscription.monthlyFeeAmount,
         ),

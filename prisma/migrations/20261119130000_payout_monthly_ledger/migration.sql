@@ -7,7 +7,13 @@ CREATE TABLE "restaurant_payout_monthly_ledgers" (
   "local_month" VARCHAR(7) NOT NULL,
   "timezone" VARCHAR(100) NOT NULL,
   "currency" VARCHAR(10) NOT NULL,
-  "commission_cap_amount" DECIMAL(10,2) NOT NULL,
+  "package_plan_id" TEXT NOT NULL,
+  "billing_model" "PackageBillingModel" NOT NULL,
+  "commission_type" "PackageCommissionType" NOT NULL,
+  "commission_percentage" DECIMAL(5,2) NOT NULL,
+  "commission_fixed_amount" DECIMAL(10,2) NOT NULL,
+  "commission_cap_amount" DECIMAL(10,2),
+  "vat_percentage" DECIMAL(5,2) NOT NULL,
   "commission_allocated_amount" DECIMAL(10,2) NOT NULL DEFAULT 0,
   "monthly_fee_amount" DECIMAL(10,2) NOT NULL,
   "monthly_fee_allocated_amount" DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -42,3 +48,14 @@ CREATE UNIQUE INDEX "restaurant_payout_allocations_source_key_key" ON "restauran
 CREATE UNIQUE INDEX "restaurant_payout_allocations_sequence_key" ON "restaurant_payout_allocations"("ledger_id", "sequence");
 CREATE INDEX "restaurant_payout_allocations_ledger_idx" ON "restaurant_payout_allocations"("ledger_id", "finalized_at");
 CREATE INDEX "restaurant_payout_allocations_invoice_idx" ON "restaurant_payout_allocations"("generated_invoice_id");
+
+CREATE TABLE "restaurant_payout_schedules" (
+  "restaurant_id" TEXT NOT NULL,
+  "last_finalized_at" TIMESTAMPTZ,
+  "lock_token" VARCHAR(64),
+  "lock_expires_at" TIMESTAMPTZ,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" TIMESTAMPTZ NOT NULL,
+  CONSTRAINT "restaurant_payout_schedules_pkey" PRIMARY KEY ("restaurant_id")
+);
+CREATE UNIQUE INDEX "restaurant_payout_schedules_lock_token_key" ON "restaurant_payout_schedules"("lock_token");

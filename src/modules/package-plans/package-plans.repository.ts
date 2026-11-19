@@ -5,6 +5,8 @@ import {
   OrderStatus,
   PaymentStatus,
   PaymentTransactionType,
+  PackageBillingModel,
+  PackageCommissionType,
   Prisma,
   RestaurantWalletTransactionType,
   SubscriptionDeductionStatus,
@@ -838,9 +840,15 @@ export class PackagePlansRepository {
     currency: string;
     sourceKey: string;
     grossCommissionableAmount: Prisma.Decimal;
+    commissionableOrderCount: number;
     availablePayoutAmount: Prisma.Decimal;
-    commissionCapAmount: Prisma.Decimal;
+    packagePlanId: string;
+    billingModel: PackageBillingModel;
+    commissionType: PackageCommissionType;
+    commissionCapAmount: Prisma.Decimal | null;
     commissionPercentage: Prisma.Decimal;
+    commissionFixedAmount: Prisma.Decimal;
+    vatPercentage: Prisma.Decimal;
     monthlyFeeAmount: Prisma.Decimal;
     snapshotHash: string;
     isSpecialPayout?: boolean;
@@ -867,7 +875,13 @@ export class PackagePlansRepository {
                 localMonth: input.localMonth,
                 timezone: input.timezone,
                 currency: input.currency,
+                packagePlanId: input.packagePlanId,
+                billingModel: input.billingModel,
+                commissionType: input.commissionType,
+                commissionPercentage: input.commissionPercentage,
+                commissionFixedAmount: input.commissionFixedAmount,
                 commissionCapAmount: input.commissionCapAmount,
+                vatPercentage: input.vatPercentage,
                 monthlyFeeAmount: input.monthlyFeeAmount,
                 monthlyFeeOutstandingAmount: input.monthlyFeeAmount,
               },
@@ -886,8 +900,11 @@ export class PackagePlansRepository {
               : allocateMonthlyCommission({
                   grossAmount: input.grossCommissionableAmount,
                   allocatedBefore: ledger.commissionAllocatedAmount,
+                  commissionType: ledger.commissionType,
                   capAmount: ledger.commissionCapAmount,
-                  percentage: input.commissionPercentage,
+                  percentage: ledger.commissionPercentage,
+                  fixedAmount: ledger.commissionFixedAmount,
+                  commissionUnits: input.commissionableOrderCount,
                 });
             const monthlyFeeAmount = input.isSpecialPayout
               ? new Prisma.Decimal(0)
@@ -954,6 +971,67 @@ export class PackagePlansRepository {
         finalizedAt: null,
       },
       data: { finalizedAt: input.finalizedAt },
+    });
+  }
+
+  async acquireRestaurantPayoutSchedule(input: {
+    restaurantId: string;
+    lockToken: string;
+    now: Date;
+    lockExpiresAt: Date;
+  }) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.restaurantPayoutSchedule.upsert({
+          where: { restaurantId: input.restaurantId },
+          create: { restaurantId: input.restaurantId },
+          update: {},
+        });
+        const claimed = await tx.restaurantPayoutSchedule.updateMany({
+          where: {
+            restaurantId: input.restaurantId,
+            OR: [
+              { lockToken: null },
+              { lockExpiresAt: null },
+              { lockExpiresAt: { lte: input.now } },
+            ],
+          },
+          data: {
+            lockToken: input.lockToken,
+            lockExpiresAt: input.lockExpiresAt,
+          },
+        });
+        if (claimed.count === 0) return null;
+        return tx.restaurantPayoutSchedule.findUniqueOrThrow({
+          where: { restaurantId: input.restaurantId },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  finalizeRestaurantPayoutSchedule(input: {
+    restaurantId: string;
+    lockToken: string;
+    finalizedAt: Date;
+  }) {
+    return this.prisma.restaurantPayoutSchedule.updateMany({
+      where: {
+        restaurantId: input.restaurantId,
+        lockToken: input.lockToken,
+      },
+      data: {
+        lastFinalizedAt: input.finalizedAt,
+        lockToken: null,
+        lockExpiresAt: null,
+      },
+    });
+  }
+
+  releaseRestaurantPayoutSchedule(restaurantId: string, lockToken: string) {
+    return this.prisma.restaurantPayoutSchedule.updateMany({
+      where: { restaurantId, lockToken },
+      data: { lockToken: null, lockExpiresAt: null },
     });
   }
 

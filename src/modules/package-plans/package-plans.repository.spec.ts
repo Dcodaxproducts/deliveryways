@@ -2,6 +2,8 @@ import {
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   OrderStatus,
+  PackageBillingModel,
+  PackageCommissionType,
   Prisma,
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
@@ -266,9 +268,15 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     currency: 'EUR',
     sourceKey: 'restaurant-1:week-1:2026-06',
     grossCommissionableAmount: new Prisma.Decimal(400),
+    commissionableOrderCount: 1,
     availablePayoutAmount: new Prisma.Decimal(400),
+    packagePlanId: 'plan-1',
+    billingModel: PackageBillingModel.HYBRID,
+    commissionType: PackageCommissionType.PERCENTAGE,
     commissionCapAmount: new Prisma.Decimal(79),
     commissionPercentage: new Prisma.Decimal(5),
+    commissionFixedAmount: new Prisma.Decimal(0),
+    vatPercentage: new Prisma.Decimal(19),
     monthlyFeeAmount: new Prisma.Decimal(159),
     snapshotHash: 'a'.repeat(64),
   };
