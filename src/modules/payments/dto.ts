@@ -14,6 +14,7 @@ import {
   IsEmail,
   IsEnum,
   IsNumber,
+  MinLength,
   IsOptional,
   IsString,
   IsUrl,
@@ -300,11 +301,14 @@ export class CreateRestaurantStripeTransferDto {
   @MaxLength(500)
   description?: string;
 
-  @ApiPropertyOptional({ maxLength: 191 })
-  @IsOptional()
+  @ApiProperty({ minLength: 8, maxLength: 191 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
+  @MinLength(8)
   @MaxLength(191)
-  idempotencyKey?: string;
+  idempotencyKey!: string;
 }
 
 export enum RestaurantPayoutProvider {
@@ -469,8 +473,12 @@ export class CreateRestaurantProviderPayoutDto {
   @MaxLength(10)
   currency?: string;
 
-  @ApiProperty({ maxLength: 191 })
+  @ApiProperty({ minLength: 8, maxLength: 191 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
+  @MinLength(8)
   @MaxLength(191)
   idempotencyKey!: string;
 

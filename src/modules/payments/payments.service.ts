@@ -1892,9 +1892,7 @@ export class PaymentsService {
       amount: dto.amount,
       currency: dto.currency,
       description: dto.description,
-      idempotencyKey:
-        this.resolveOptionalString(dto.idempotencyKey) ??
-        randomBytes(16).toString('hex'),
+      idempotencyKey: this.requirePayoutIdempotencyKey(dto.idempotencyKey),
     });
   }
 
@@ -2539,11 +2537,6 @@ export class PaymentsService {
       dto.currency ?? (await this.resolvePreferredCurrency(restaurant.id)),
     );
     const amount = new Prisma.Decimal(dto.amount).toDecimalPlaces(2);
-    await this.assertRestaurantPayoutAvailable(
-      restaurant.id,
-      amount,
-      wallet.balance.minus(wallet.reservedPayoutBalance),
-    );
     const request = await this.automaticPayoutDispatcher.executeManualPayout({
       tenantId: restaurant.tenantId,
       restaurantId: restaurant.id,
@@ -2551,7 +2544,7 @@ export class PaymentsService {
       provider: dto.provider,
       amount,
       currency: (dto.currency ?? wallet.currency).trim().toUpperCase(),
-      idempotencyKey: dto.idempotencyKey.trim(),
+      idempotencyKey: this.requirePayoutIdempotencyKey(dto.idempotencyKey),
       description:
         this.resolveOptionalString(dto.description) ??
         `DeliveryWays restaurant payout ${restaurant.id}`,
@@ -4970,6 +4963,21 @@ export class PaymentsService {
 
     const normalized = value.trim();
     return normalized.length ? normalized : undefined;
+  }
+
+  private requirePayoutIdempotencyKey(value: unknown) {
+    if (typeof value !== 'string') {
+      throw new BadRequestException(
+        'A stable idempotency key is required for provider payouts',
+      );
+    }
+    const key = value.trim();
+    if (key.length < 8 || key.length > 191) {
+      throw new BadRequestException(
+        'Payout idempotency key must be between 8 and 191 characters',
+      );
+    }
+    return key;
   }
 
   private async ensureRestaurantWalletAccount(

@@ -284,6 +284,81 @@ describe('AutomaticPayoutDispatcherService', () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps different manual keys behind the atomic wallet reservation fence', async () => {
+    const payoutTransfer = {
+      ...transfer({}),
+      generatedInvoiceId: null,
+      amount: new Prisma.Decimal(80),
+    };
+    const tx = {
+      automaticPayoutTransfer: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(payoutTransfer),
+        update: jest.fn().mockResolvedValue(payoutTransfer),
+      },
+      restaurantWalletAccount: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'wallet-1',
+            balance: new Prisma.Decimal(100),
+            reservedPayoutBalance: new Prisma.Decimal(0),
+            currency: 'EUR',
+          })
+          .mockResolvedValueOnce({
+            id: 'wallet-1',
+            balance: new Prisma.Decimal(100),
+            reservedPayoutBalance: new Prisma.Decimal(80),
+            currency: 'EUR',
+          }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      restaurantPayoutRequest: {
+        create: jest.fn().mockResolvedValue({ id: 'request-1' }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((work: (client: typeof tx) => Promise<unknown>) =>
+        work(tx),
+      ),
+    };
+    const service = new AutomaticPayoutDispatcherService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const reserve = (
+      service as unknown as {
+        reserve: (
+          id: string,
+          claimToken: string,
+          now: Date,
+          provider: RestaurantPayoutProvider,
+        ) => Promise<void>;
+      }
+    ).reserve.bind(service);
+
+    await reserve(
+      'manual-key-a',
+      'claim-a',
+      new Date(),
+      RestaurantPayoutProvider.STRIPE,
+    );
+    await expect(
+      reserve(
+        'manual-key-b',
+        'claim-b',
+        new Date(),
+        RestaurantPayoutProvider.STRIPE,
+      ),
+    ).rejects.toThrow(
+      'Restaurant wallet no longer covers the payout reservation',
+    );
+    expect(tx.restaurantWalletAccount.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.restaurantPayoutRequest.create).toHaveBeenCalledTimes(1);
+  });
+
   it('requires provider proof before releasing or resending UNKNOWN', async () => {
     const { service } = makeService({});
     await expect(

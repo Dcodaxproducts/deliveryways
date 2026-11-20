@@ -1453,6 +1453,67 @@ describe('PaymentsService', () => {
     });
   });
 
+  it('fails closed when the legacy Stripe transfer key is missing', async () => {
+    const { service } = makeService();
+    const createProviderPayout = jest.spyOn(
+      service,
+      'createRestaurantProviderPayout',
+    );
+
+    await expect(
+      service.createRestaurantStripeTransfer(
+        { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+        'restaurant-1',
+        { amount: 125 } as never,
+      ),
+    ).rejects.toThrow(
+      'A stable idempotency key is required for provider payouts',
+    );
+    expect(createProviderPayout).not.toHaveBeenCalled();
+  });
+
+  it('reuses the same logical payout after a lost legacy Stripe response', async () => {
+    const { service } = makeService();
+    const delivered = {
+      data: { id: 'request-1', paymentReference: 'tr_123' },
+      message: 'Restaurant provider payout completed successfully',
+    };
+    const createProviderPayout = jest
+      .spyOn(service, 'createRestaurantProviderPayout')
+      .mockResolvedValue(delivered as never);
+    const user = {
+      uid: 'super-1',
+      role: UserRoleEnum.SUPER_ADMIN,
+    } as never;
+    const dto = {
+      amount: 125,
+      currency: 'EUR',
+      idempotencyKey: 'response-loss-2026-11-20',
+    };
+
+    await service.createRestaurantStripeTransfer(user, 'restaurant-1', dto);
+    const replay = await service.createRestaurantStripeTransfer(
+      user,
+      'restaurant-1',
+      dto,
+    );
+
+    expect(createProviderPayout).toHaveBeenCalledTimes(2);
+    expect(createProviderPayout).toHaveBeenNthCalledWith(
+      1,
+      user,
+      'restaurant-1',
+      expect.objectContaining({ idempotencyKey: dto.idempotencyKey }),
+    );
+    expect(createProviderPayout).toHaveBeenNthCalledWith(
+      2,
+      user,
+      'restaurant-1',
+      expect.objectContaining({ idempotencyKey: dto.idempotencyKey }),
+    );
+    expect(replay).toEqual(delivered);
+  });
+
   it('debits the restaurant wallet when a platform-collected order is refunded', async () => {
     const {
       service,
@@ -3361,7 +3422,23 @@ describe('PaymentsService', () => {
       updatedAt: new Date(),
     });
 
-    const result = await service.createRestaurantProviderPayout(
+    const first = await service.createRestaurantProviderPayout(
+      { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+      {
+        provider: RestaurantPayoutProvider.STRIPE,
+        amount: 250,
+        currency: 'EUR',
+        idempotencyKey: 'payout-1',
+      },
+    );
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      balance: new Prisma.Decimal(0),
+      reservedPayoutBalance: new Prisma.Decimal(0),
+      currency: 'EUR',
+    });
+    const replay = await service.createRestaurantProviderPayout(
       { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
       'restaurant-1',
       {
@@ -3373,8 +3450,9 @@ describe('PaymentsService', () => {
     );
 
     expect(automaticPayoutDispatcher.executeManualPayout).toHaveBeenCalledTimes(
-      1,
+      2,
     );
-    expect(result.data.paymentReference).toBe('tr_123');
+    expect(first).toEqual(replay);
+    expect(replay.data.paymentReference).toBe('tr_123');
   });
 });

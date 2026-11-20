@@ -3,7 +3,10 @@ import {
   BadRequestException,
   ValidationPipe,
 } from '@nestjs/common';
-import { CreateRestaurantPayoutRequestDto } from './dto';
+import {
+  CreateRestaurantPayoutRequestDto,
+  CreateRestaurantStripeTransferDto,
+} from './dto';
 
 describe('Payments DTO validation', () => {
   const validationPipe = new ValidationPipe({
@@ -19,6 +22,38 @@ describe('Payments DTO validation', () => {
     type: 'body',
     metatype: CreateRestaurantPayoutRequestDto,
   };
+
+  const stripeTransferBodyMetadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: CreateRestaurantStripeTransferDto,
+  };
+
+  it('rejects Stripe transfers without a caller-supplied idempotency key', async () => {
+    await expect(
+      validationPipe.transform(
+        { amount: 125, currency: 'EUR' },
+        stripeTransferBodyMetadata,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('trims and bounds Stripe transfer idempotency keys', async () => {
+    await expect(
+      validationPipe.transform(
+        { amount: 125, idempotencyKey: '  weekly-payout-2026-11-20  ' },
+        stripeTransferBodyMetadata,
+      ),
+    ).resolves.toMatchObject({
+      amount: 125,
+      idempotencyKey: 'weekly-payout-2026-11-20',
+    });
+    await expect(
+      validationPipe.transform(
+        { amount: 125, idempotencyKey: 'short' },
+        stripeTransferBodyMetadata,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 
   it('allows restaurant payout requests with FE bank details payload', async () => {
     await expect(
