@@ -4,6 +4,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentTransactionType,
+  PackagePayoutCycle,
   Prisma,
   RestaurantPayoutRequestStatus,
   RestaurantWalletTransactionType,
@@ -77,6 +78,8 @@ describe('PaymentsService', () => {
       totalDeductionsAmount?: number;
       restaurantPayoutAmount: number;
       currency: string;
+      payoutCycle?: string | null;
+      nextPayoutAt?: Date | null;
       activePlan?: {
         subscriptionId: string;
         id: string;
@@ -170,6 +173,15 @@ describe('PaymentsService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         create: jest.fn(),
+      },
+      walletAccount: {
+        aggregate: jest.fn().mockResolvedValue({
+          _count: { _all: 0 },
+          _sum: { balance: null },
+        }),
+      },
+      automaticPayoutTransfer: {
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       restaurantPayoutRequest: {
         create: jest.fn(),
@@ -1833,6 +1845,8 @@ describe('PaymentsService', () => {
         vatPercentage: 19,
         payoutCycle: 'WEEKLY',
       },
+      payoutCycle: null,
+      nextPayoutAt: null,
       currency: 'PKR',
       customerWalletExposure: {
         accountCount: 3,
@@ -2072,6 +2086,100 @@ describe('PaymentsService', () => {
         },
       ),
     ).rejects.toThrow('Only Super Admin can update restaurant payment methods');
+  });
+
+  it('returns authoritative wallet card fields from bounded sources', async () => {
+    const nextPayoutAt = new Date('2026-07-08T00:00:00.000Z');
+    const { service, prisma } = makeService('development', {
+      grossAmount: 1000,
+      totalOrderAmount: 1000,
+      platformCollectedAmount: 800,
+      platformCommissionAmount: 40,
+      restaurantTransactionFeeAmount: 10,
+      vatPercentage: 19,
+      vatAmount: 9.5,
+      billingPeriodSummary: {
+        ordersCount: 2,
+        totalOrderAmount: 1000,
+        platformCollectedAmount: 800,
+        platformCommissionAmount: 40,
+        restaurantTransactionFeeAmount: 10,
+        vatAmount: 9.5,
+        previousPayoutAmount: 0,
+      },
+      monthlyFeeAmount: 159,
+      monthlyFeeScheduledToDate: 79.5,
+      monthlyFeeDeductedBefore: 39.75,
+      monthlyFeeDeductedAmount: 39.75,
+      monthlyFeeDeductedThisMonth: 39.75,
+      monthlyFeeOutstandingAmount: 119.25,
+      restaurantPayoutAmount: 900,
+      currency: 'EUR',
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+      nextPayoutAt,
+    });
+    prisma.restaurant.findFirst.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: {
+        payments: {
+          payoutProviders: {
+            configurations: {
+              STRIPE: {
+                provider: RestaurantPayoutProvider.STRIPE,
+                enabled: true,
+                approvedAt: '2026-06-01T00:00:00.000Z',
+                approvedBy: 'super-admin-1',
+                publicDetails: { accountId: 'acct_123' },
+              },
+            },
+          },
+        },
+      },
+    });
+    prisma.restaurantWalletAccount.upsert.mockResolvedValue({
+      id: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      balance: new Prisma.Decimal(1200),
+      currency: 'EUR',
+    });
+    prisma.restaurantWalletTransaction.findMany.mockResolvedValue([]);
+    prisma.walletAccount.aggregate.mockResolvedValue({
+      _count: { _all: 3 },
+      _sum: { balance: new Prisma.Decimal(125) },
+    });
+    prisma.automaticPayoutTransfer.findFirst.mockResolvedValue(null);
+
+    const result = await service.getRestaurantWallet(
+      { uid: 'admin-1', role: UserRoleEnum.SUPER_ADMIN } as never,
+      'restaurant-1',
+    );
+
+    expect(result.data).toMatchObject({
+      ledgerBalance: 1200,
+      availablePayout: 900,
+      customerWalletExposure: { accountCount: 3, totalBalance: 125 },
+      currentPeriodNetContributionAmount: 740.5,
+      carryForwardAvailableAmount: 159.5,
+      payoutCycle: PackagePayoutCycle.WEEKLY,
+      nextPayoutAt,
+      automaticPayout: {
+        enabled: true,
+        provider: RestaurantPayoutProvider.STRIPE,
+        status: 'READY',
+        reason: null,
+      },
+      monthlyFee: {
+        configuredAmount: 159,
+        scheduledToDateAmount: 79.5,
+        deductedThisMonthAmount: 39.75,
+        dueNextPayoutAmount: 39.75,
+        outstandingAmount: 119.25,
+      },
+    });
+    expect(prisma.walletAccount.aggregate).toHaveBeenCalledTimes(1);
+    expect(prisma.automaticPayoutTransfer.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it('blocks Payment Settings staff outside assigned restaurants', async () => {

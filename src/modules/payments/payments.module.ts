@@ -12,6 +12,7 @@ import { PaypalPayoutsService } from './paypal-payouts.service';
 import { PayoutCredentialsService } from './payout-credentials.service';
 import { PaypalOrdersService } from './paypal-orders.service';
 import { OrdersModule } from '../orders/orders.module';
+import { AutomaticPayoutDispatcherService } from './automatic-payout-dispatcher.service';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { OrdersModule } from '../orders/orders.module';
     PaypalPayoutsService,
     PayoutCredentialsService,
     PaypalOrdersService,
+    AutomaticPayoutDispatcherService,
   ],
   exports: [PaymentsService],
 })

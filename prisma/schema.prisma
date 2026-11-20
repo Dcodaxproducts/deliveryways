@@ -147,6 +147,17 @@ enum PackagePayoutCycle {
   MONTHLY
 }
 
+enum AutomaticPayoutTransferState {
+  PENDING
+  PREPARING
+  SENDING
+  SUCCEEDED
+  RETRY_WAIT
+  BLOCKED
+  UNKNOWN
+  FAILED
+}
+
 enum GeneratedInvoiceKind {
   ORDER
   SUBSCRIPTION
@@ -447,6 +458,7 @@ model Tenant {
   payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerTenant")
   payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleTenant")
   payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxTenant")
+  automaticPayoutTransfers AutomaticPayoutTransfer[]       @relation("AutomaticPayoutTenant")
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
@@ -511,6 +523,7 @@ model Restaurant {
   payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerRestaurant")
   payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleRestaurant")
   payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxRestaurant")
+  automaticPayoutTransfers AutomaticPayoutTransfer[]       @relation("AutomaticPayoutRestaurant")
   orderReviews           OrderReview[]
   entityTranslations     EntityTranslation[]
   contactSubmissions     ContactSubmission[]
@@ -2305,6 +2318,7 @@ model GeneratedInvoice {
   events            GeneratedInvoiceEvent[]
   payoutAllocations RestaurantPayoutAllocation[]
   payoutEmailOutbox PayoutInvoiceEmailOutbox?
+  automaticPayoutTransfer AutomaticPayoutTransfer?
 
   @@unique([kind, sourceKey], map: "generated_invoices_kind_source_key_key")
   @@index([kind, sourceKey])
@@ -2419,6 +2433,37 @@ model PayoutInvoiceEmailOutbox {
 
   @@index([deliveryState, nextAttemptAt, claimExpiresAt, createdAt], map: "payout_invoice_email_outbox_dispatch_idx")
   @@map("payout_invoice_email_outbox")
+}
+
+model AutomaticPayoutTransfer {
+  id                  String                       @id @default(cuid())
+  tenantId            String                       @map("tenant_id")
+  restaurantId        String                       @map("restaurant_id")
+  generatedInvoiceId  String                       @unique @map("generated_invoice_id")
+  payoutRequestId     String?                      @unique @map("payout_request_id")
+  provider            String?                      @db.VarChar(24)
+  state               AutomaticPayoutTransferState @default(PENDING)
+  amount              Decimal                      @db.Decimal(12, 2)
+  currency            String                       @db.VarChar(10)
+  idempotencyKey      String                       @unique @map("idempotency_key") @db.VarChar(255)
+  providerReference   String?                      @map("provider_reference") @db.VarChar(255)
+  claimToken          String?                      @unique @map("claim_token") @db.VarChar(64)
+  claimExpiresAt      DateTime?                    @map("claim_expires_at") @db.Timestamptz
+  nextAttemptAt       DateTime?                    @map("next_attempt_at") @db.Timestamptz
+  attempts            Int                          @default(0)
+  lastError           String?                      @map("last_error") @db.VarChar(1000)
+  providerSubmittedAt DateTime?                    @map("provider_submitted_at") @db.Timestamptz
+  completedAt         DateTime?                    @map("completed_at") @db.Timestamptz
+  createdAt           DateTime                     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime                     @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant           Tenant           @relation("AutomaticPayoutTenant", fields: [tenantId], references: [id], onDelete: Restrict)
+  restaurant       Restaurant       @relation("AutomaticPayoutRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
+  generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([state, nextAttemptAt, claimExpiresAt, createdAt], map: "automatic_payout_transfers_dispatch_idx")
+  @@index([restaurantId, createdAt], map: "automatic_payout_transfers_restaurant_idx")
+  @@map("automatic_payout_transfers")
 }
 
 model GeneratedInvoiceEvent {

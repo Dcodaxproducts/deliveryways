@@ -1850,6 +1850,69 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Platform Commission');
   });
 
+  it('invoices monthly plans monthly for every payout cadence', async () => {
+    const cycles = [
+      PackagePayoutCycle.DAILY,
+      PackagePayoutCycle.WEEKLY,
+      PackagePayoutCycle.BIWEEKLY,
+      PackagePayoutCycle.MONTHLY,
+    ];
+    const subscriptions = cycles.map((payoutCycle, index) =>
+      makeSubscription({
+        id: 'subscription-' + String(index + 1).padStart(8, '0'),
+        nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),
+        payoutCycleOverride: payoutCycle,
+        planSnapshot: {
+          ...makeSubscription().planSnapshot,
+          billingInterval: BillingInterval.MONTHLY,
+          payoutCycle,
+        },
+        packagePlan: makePlan({
+          billingInterval: BillingInterval.MONTHLY,
+          payoutCycle,
+        }),
+      }),
+    );
+    const repository = {
+      listDueSubscriptions: jest.fn().mockResolvedValue(subscriptions),
+      findSubscriptionById: jest.fn((id: string) =>
+        Promise.resolve(subscriptions.find((item) => item.id === id)),
+      ),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([]),
+      settleSubscriptionInvoiceFromWallet: jest.fn().mockResolvedValue({
+        appliedAmount: new Prisma.Decimal(0),
+        balanceAfter: new Prisma.Decimal(0),
+        walletAccountId: 'restaurant-wallet-1',
+        walletTransactionId: null,
+      }),
+      updateSubscription: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(subscriptions.find((item) => item.id === id)),
+        ),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      { sendEmail: jest.fn().mockResolvedValue(undefined) } as never,
+      undefined,
+      {
+        hasEmailed: jest.fn().mockResolvedValue(false),
+        persist: jest.fn().mockResolvedValue({ id: 'invoice-record' }),
+      } as never,
+    );
+
+    await service.emailDueSubscriptionInvoices(
+      new Date('2026-07-01T02:00:00.000Z'),
+    );
+
+    for (const subscription of subscriptions) {
+      expect(repository.updateSubscription).toHaveBeenCalledWith(
+        subscription.id,
+        { nextBillingAt: new Date('2026-08-01T00:00:00.000Z') },
+      );
+    }
+  });
+
   it('auto-emails due subscription invoices once and advances next billing date', async () => {
     const subscription = makeSubscription({
       nextBillingAt: new Date('2026-07-01T00:00:00.000Z'),

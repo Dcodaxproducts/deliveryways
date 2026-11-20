@@ -352,9 +352,11 @@ describe('PackagePlansRepository monthly payout allocation', () => {
         create,
       },
       restaurantPayoutMonthlyLedger: {
-        findUnique: jest.fn().mockResolvedValue({
-          commissionAllocatedAmount: new Prisma.Decimal(45),
-          monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: {
+            commissionAllocatedAmount: new Prisma.Decimal(45),
+            monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
+          },
         }),
         upsert: jest.fn().mockResolvedValue({
           id: 'ledger-1',
@@ -399,6 +401,70 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     expect(capturedLedgerUpdate.data?.monthlyFeeAllocatedAmount).toEqual(
       new Prisma.Decimal('79.50'),
     );
+  });
+
+  it('carries restaurant-month cap and fee across a replacement subscription id', async () => {
+    let capturedAllocation: Record<string, unknown> = {};
+    const tx = {
+      tenantSubscription: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'subscription-2' }),
+      },
+      restaurantPayoutAllocation: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(2),
+        create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
+          capturedAllocation = data;
+          return Promise.resolve({ id: 'allocation-2', ...data });
+        }),
+      },
+      restaurantPayoutMonthlyLedger: {
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: {
+            commissionAllocatedAmount: new Prisma.Decimal(50),
+            monthlyFeeAllocatedAmount: new Prisma.Decimal('79.50'),
+          },
+        }),
+        upsert: jest.fn().mockResolvedValue({
+          id: 'ledger-2',
+          finalizedAt: null,
+          commissionCapAmount: new Prisma.Decimal(79),
+          commissionAllocatedAmount: new Prisma.Decimal(0),
+          monthlyFeeAmount: new Prisma.Decimal(159),
+          payoutCycle: PackagePayoutCycle.WEEKLY,
+          payoutOpportunities: 4,
+          monthlyFeeAllocatedAmount: new Prisma.Decimal(0),
+          commissionType: PackageCommissionType.PERCENTAGE,
+          commissionPercentage: new Prisma.Decimal(5),
+          commissionFixedAmount: new Prisma.Decimal(0),
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'ledger-2' }),
+      },
+    };
+    const repository = new PackagePlansRepository({
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    } as never);
+
+    await repository.allocateMonthlyPayout({
+      ...input,
+      subscriptionId: 'subscription-2',
+      sourceKey: 'restaurant-1:week-3:2026-06',
+      expectedCommissionAmount: new Prisma.Decimal(20),
+      expectedMonthlyFeeAmount: new Prisma.Decimal('39.75'),
+    });
+
+    expect(tx.restaurantPayoutMonthlyLedger.aggregate).toHaveBeenCalledWith({
+      where: { restaurantId: 'restaurant-1', localMonth: '2026-06' },
+      _sum: {
+        commissionAllocatedAmount: true,
+        monthlyFeeAllocatedAmount: true,
+      },
+    });
+    expect(capturedAllocation).toMatchObject({
+      commissionAmount: new Prisma.Decimal(20),
+      monthlyFeeAmount: new Prisma.Decimal('39.75'),
+    });
   });
 
   it('claims a payout email outbox only once so retries cannot duplicate delivery', async () => {

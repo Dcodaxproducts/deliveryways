@@ -711,8 +711,8 @@ export class PackagePlansService {
             this.toBillingMonth(now, payoutTimezone),
             payoutTimezone,
           );
-    const [orders, specialPayouts, currency, walletAccount] = await Promise.all(
-      [
+    const [orders, specialPayouts, currency, walletAccount, payoutSchedule] =
+      await Promise.all([
         this.packagePlansRepository.listRestaurantWalletPayoutOrders(
           restaurant.id,
         ),
@@ -721,8 +721,10 @@ export class PackagePlansService {
         this.packagePlansRepository.findRestaurantWalletAccount?.(
           restaurant.id,
         ) ?? Promise.resolve(null),
-      ],
-    );
+        this.packagePlansRepository.findRestaurantPayoutSchedule?.(
+          restaurant.id,
+        ) ?? Promise.resolve(null),
+      ]);
     const currentBillingMonth = this.toBillingMonth(now, payoutTimezone);
     const billingMonths = [
       ...new Set([
@@ -1004,6 +1006,20 @@ export class PackagePlansService {
         calculatedRestaurantPayoutAmount,
       ),
       restaurantPayoutAmount: Number(restaurantPayoutAmount.toDecimalPlaces(2)),
+      payoutCycle: plan?.payoutCycle ?? null,
+      nextPayoutAt: plan
+        ? payoutSchedule?.lastFinalizedAt
+          ? nextRestaurantPayoutAt(
+              payoutSchedule.lastFinalizedAt,
+              plan.payoutCycle,
+              payoutTimezone,
+            )
+          : this.resolveLastCompletedPayoutPeriod(
+              plan.payoutCycle,
+              now,
+              payoutTimezone,
+            ).to
+        : null,
       currency,
       activePlan:
         subscription && plan
@@ -1418,6 +1434,7 @@ export class PackagePlansService {
         status: GeneratedInvoiceStatus.SENT,
         lockToken: supportsScheduleLock ? lockToken : undefined,
         finalizedAt: input.paidAt,
+        automaticPayoutEligible: false,
       },
     );
 
@@ -1679,177 +1696,188 @@ export class PackagePlansService {
   async emailDuePayoutInvoices(now = new Date()) {
     this.ensureInvoiceAutomationConfigured();
     const systemUser = this.systemInvoiceUser();
-    const subscriptions =
-      await this.packagePlansRepository.listActiveRestaurantSubscriptionsForPayouts();
     const results = { sent: 0, skipped: 0 };
+    let cursor: string | undefined;
 
-    for (const subscription of subscriptions) {
-      if (!subscription.restaurantId) {
-        results.skipped += 1;
-        continue;
-      }
-
-      const plan = this.resolveSubscriptionInvoicePlan(subscription);
-      const restaurant =
-        await this.packagePlansRepository.findRestaurantPayoutScope(
-          subscription.restaurantId,
+    while (true) {
+      const subscriptions =
+        await this.packagePlansRepository.listActiveRestaurantSubscriptionsForPayouts(
+          cursor,
+          100,
         );
-      if (!restaurant) {
-        results.skipped += 1;
-        continue;
-      }
-      const supportsScheduleLock =
-        typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
-        'function';
-      const lockToken = randomUUID();
-      const schedule = supportsScheduleLock
-        ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
-            restaurantId: subscription.restaurantId,
-            lockToken,
-            now,
-            lockExpiresAt: new Date(now.getTime() + 15 * 60 * 1000),
-          })
-        : null;
-      if (supportsScheduleLock && !schedule) {
-        results.skipped += 1;
-        continue;
-      }
-
-      const timezone = this.resolveRestaurantPayoutTimezone(restaurant);
-      const fallbackPeriod = this.resolveLastCompletedPayoutPeriod(
-        plan.payoutCycle,
-        now,
-        timezone,
-      );
-      const nextAutomaticAt = schedule?.lastFinalizedAt
-        ? nextRestaurantPayoutAt(
-            schedule.lastFinalizedAt,
-            plan.payoutCycle,
-            timezone,
-          )
-        : fallbackPeriod.to;
-      if (schedule?.lastFinalizedAt && now < nextAutomaticAt) {
-        await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
-          subscription.restaurantId,
-          lockToken,
-        );
-        results.skipped += 1;
-        continue;
-      }
-      const period = schedule?.lastFinalizedAt
-        ? { from: schedule.lastFinalizedAt, to: nextAutomaticAt }
-        : fallbackPeriod;
-
-      try {
-        const invoice = await this.buildWeeklyPayoutInvoice({
-          restaurantId: subscription.restaurantId,
-          fromDate: period.from.toISOString(),
-          toDate: period.to.toISOString(),
-        });
-        const recipientEmail = invoice.restaurant.billingEmail;
-        const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
-        const hasPayoutActivity =
-          invoice.totals.ordersCount > 0 ||
-          invoice.totals.monthlyFeeDeductedAmount > 0;
-
-        if (!hasPayoutActivity) {
-          if (supportsScheduleLock) {
-            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
-              subscription.restaurantId,
-              lockToken,
-            );
-          }
-          results.skipped += 1;
-          continue;
-        }
-        const legacyHasRecord =
-          typeof this.packagePlansRepository.findFinalizedPayoutInvoice !==
-            'function' &&
-          Boolean(
-            await this.invoiceRecordsService?.hasRecord?.(
-              GeneratedInvoiceKind.WEEKLY_PAYOUT,
-              sourceKey,
-            ),
-          );
-        if (legacyHasRecord) {
-          if (supportsScheduleLock) {
-            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
-              subscription.restaurantId,
-              lockToken,
-            );
-          }
-          results.skipped += 1;
-          continue;
-        }
-        const stored =
-          typeof this.packagePlansRepository.findFinalizedPayoutInvoice ===
-          'function'
-            ? await this.packagePlansRepository.findFinalizedPayoutInvoice(
-                sourceKey,
-              )
-            : null;
-        if (stored) {
-          if (supportsScheduleLock) {
-            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
-              subscription.restaurantId,
-              lockToken,
-            );
-          }
-          const storedInvoice = this.hydrateStoredPayoutInvoiceSnapshot(
-            stored.snapshot,
-          );
-          const sent = await this.deliverWeeklyPayoutInvoice(
-            systemUser,
-            storedInvoice,
-            storedInvoice.restaurant.billingEmail ?? '',
-            stored.id,
-          );
-          if (sent) results.sent += 1;
-          else results.skipped += 1;
-          continue;
-        }
-
-        if (!recipientEmail) {
-          await this.persistWeeklyPayoutInvoice(systemUser, invoice, {
-            status: GeneratedInvoiceStatus.SENT,
-            lockToken: supportsScheduleLock ? lockToken : undefined,
-            finalizedAt: period.to,
-          });
+      if (subscriptions.length === 0) break;
+      for (const subscription of subscriptions) {
+        if (!subscription.restaurantId) {
           results.skipped += 1;
           continue;
         }
 
-        const finalized = await this.persistWeeklyPayoutInvoice(
-          systemUser,
-          invoice,
-          {
-            status: GeneratedInvoiceStatus.SENT,
-            recipientEmail,
-            lockToken: supportsScheduleLock ? lockToken : undefined,
-            finalizedAt: period.to,
-          },
-        );
-        if (!finalized) {
-          throw new InternalServerErrorException(
-            'Payout invoice persistence is not configured',
+        const plan = this.resolveSubscriptionInvoicePlan(subscription);
+        const restaurant =
+          await this.packagePlansRepository.findRestaurantPayoutScope(
+            subscription.restaurantId,
           );
+        if (!restaurant) {
+          results.skipped += 1;
+          continue;
         }
-        await this.deliverWeeklyPayoutInvoice(
-          systemUser,
-          this.hydrateStoredPayoutInvoiceSnapshot(finalized.invoice.snapshot),
-          recipientEmail,
-          finalized.invoice.id,
+        const supportsScheduleLock =
+          typeof this.packagePlansRepository.acquireRestaurantPayoutSchedule ===
+          'function';
+        const lockToken = randomUUID();
+        const schedule = supportsScheduleLock
+          ? await this.packagePlansRepository.acquireRestaurantPayoutSchedule({
+              restaurantId: subscription.restaurantId,
+              lockToken,
+              now,
+              lockExpiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+            })
+          : null;
+        if (supportsScheduleLock && !schedule) {
+          results.skipped += 1;
+          continue;
+        }
+
+        const timezone = this.resolveRestaurantPayoutTimezone(restaurant);
+        const fallbackPeriod = this.resolveLastCompletedPayoutPeriod(
+          plan.payoutCycle,
+          now,
+          timezone,
         );
-        results.sent += 1;
-      } catch (error) {
-        if (supportsScheduleLock) {
+        const nextAutomaticAt = schedule?.lastFinalizedAt
+          ? nextRestaurantPayoutAt(
+              schedule.lastFinalizedAt,
+              plan.payoutCycle,
+              timezone,
+            )
+          : fallbackPeriod.to;
+        if (schedule?.lastFinalizedAt && now < nextAutomaticAt) {
           await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
             subscription.restaurantId,
             lockToken,
           );
+          results.skipped += 1;
+          continue;
         }
-        throw error;
+        const period = schedule?.lastFinalizedAt
+          ? { from: schedule.lastFinalizedAt, to: nextAutomaticAt }
+          : fallbackPeriod;
+
+        try {
+          const invoice = await this.buildWeeklyPayoutInvoice({
+            restaurantId: subscription.restaurantId,
+            fromDate: period.from.toISOString(),
+            toDate: period.to.toISOString(),
+          });
+          const recipientEmail = invoice.restaurant.billingEmail;
+          const sourceKey = this.buildWeeklyPayoutInvoiceSourceKey(invoice);
+          const hasPayoutActivity =
+            invoice.totals.ordersCount > 0 ||
+            invoice.totals.monthlyFeeDeductedAmount > 0;
+
+          if (!hasPayoutActivity) {
+            if (supportsScheduleLock) {
+              await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+                subscription.restaurantId,
+                lockToken,
+              );
+            }
+            results.skipped += 1;
+            continue;
+          }
+          const legacyHasRecord =
+            typeof this.packagePlansRepository.findFinalizedPayoutInvoice !==
+              'function' &&
+            Boolean(
+              await this.invoiceRecordsService?.hasRecord?.(
+                GeneratedInvoiceKind.WEEKLY_PAYOUT,
+                sourceKey,
+              ),
+            );
+          if (legacyHasRecord) {
+            if (supportsScheduleLock) {
+              await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+                subscription.restaurantId,
+                lockToken,
+              );
+            }
+            results.skipped += 1;
+            continue;
+          }
+          const stored =
+            typeof this.packagePlansRepository.findFinalizedPayoutInvoice ===
+            'function'
+              ? await this.packagePlansRepository.findFinalizedPayoutInvoice(
+                  sourceKey,
+                )
+              : null;
+          if (stored) {
+            if (supportsScheduleLock) {
+              await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+                subscription.restaurantId,
+                lockToken,
+              );
+            }
+            const storedInvoice = this.hydrateStoredPayoutInvoiceSnapshot(
+              stored.snapshot,
+            );
+            const sent = await this.deliverWeeklyPayoutInvoice(
+              systemUser,
+              storedInvoice,
+              storedInvoice.restaurant.billingEmail ?? '',
+              stored.id,
+            );
+            if (sent) results.sent += 1;
+            else results.skipped += 1;
+            continue;
+          }
+
+          if (!recipientEmail) {
+            await this.persistWeeklyPayoutInvoice(systemUser, invoice, {
+              status: GeneratedInvoiceStatus.SENT,
+              lockToken: supportsScheduleLock ? lockToken : undefined,
+              finalizedAt: period.to,
+              automaticPayoutEligible: true,
+            });
+            results.skipped += 1;
+            continue;
+          }
+
+          const finalized = await this.persistWeeklyPayoutInvoice(
+            systemUser,
+            invoice,
+            {
+              status: GeneratedInvoiceStatus.SENT,
+              recipientEmail,
+              lockToken: supportsScheduleLock ? lockToken : undefined,
+              finalizedAt: period.to,
+              automaticPayoutEligible: true,
+            },
+          );
+          if (!finalized) {
+            throw new InternalServerErrorException(
+              'Payout invoice persistence is not configured',
+            );
+          }
+          await this.deliverWeeklyPayoutInvoice(
+            systemUser,
+            this.hydrateStoredPayoutInvoiceSnapshot(finalized.invoice.snapshot),
+            recipientEmail,
+            finalized.invoice.id,
+          );
+          results.sent += 1;
+        } catch (error) {
+          if (supportsScheduleLock) {
+            await this.packagePlansRepository.releaseRestaurantPayoutSchedule(
+              subscription.restaurantId,
+              lockToken,
+            );
+          }
+          throw error;
+        }
       }
+      if (subscriptions.length < 100) break;
+      cursor = subscriptions.at(-1)?.id;
     }
 
     return results;
@@ -4302,6 +4330,7 @@ export class PackagePlansService {
       status?: GeneratedInvoiceStatus;
       lockToken?: string;
       finalizedAt?: Date;
+      automaticPayoutEligible?: boolean;
     } = {},
   ) {
     if (!this.invoiceRecordsService) return;
@@ -4364,6 +4393,7 @@ export class PackagePlansService {
         lockToken: options.lockToken,
         finalizedAt: options.finalizedAt ?? invoice.period.to,
         recipientEmail: options.recipientEmail,
+        automaticPayoutEligible: options.automaticPayoutEligible ?? false,
         allocations: this.buildWeeklyPayoutAllocations(invoice),
       });
     }

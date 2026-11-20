@@ -387,7 +387,7 @@ export class PackagePlansRepository {
     });
   }
 
-  listActiveRestaurantSubscriptionsForPayouts() {
+  listActiveRestaurantSubscriptionsForPayouts(cursor?: string, take = 100) {
     return this.prisma.tenantSubscription.findMany({
       where: {
         restaurantId: { not: null },
@@ -396,7 +396,9 @@ export class PackagePlansRepository {
         },
       },
       include: this.subscriptionInclude,
-      orderBy: [{ restaurantId: 'asc' }, { createdAt: 'asc' }],
+      orderBy: { id: 'asc' },
+      take: Math.min(Math.max(take, 1), 100),
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
   }
 
@@ -767,6 +769,13 @@ export class PackagePlansRepository {
     });
   }
 
+  findRestaurantPayoutSchedule(restaurantId: string) {
+    return this.prisma.restaurantPayoutSchedule.findUnique({
+      where: { restaurantId },
+      select: { lastFinalizedAt: true },
+    });
+  }
+
   listRestaurantSpecialPayoutInvoices(restaurantId: string) {
     return this.prisma.generatedInvoice.findMany({
       where: {
@@ -917,35 +926,36 @@ export class PackagePlansRepository {
                 'Payout subscription does not belong to restaurant and tenant',
               );
             }
-            const existingLedger =
-              await tx.restaurantPayoutMonthlyLedger.findUnique({
+            const restaurantMonth =
+              await tx.restaurantPayoutMonthlyLedger.aggregate({
                 where: {
-                  restaurantId_subscriptionId_localMonth: {
-                    restaurantId: input.restaurantId,
-                    subscriptionId: input.subscriptionId,
-                    localMonth: input.localMonth,
-                  },
+                  restaurantId: input.restaurantId,
+                  localMonth: input.localMonth,
                 },
-                select: {
+                _sum: {
                   commissionAllocatedAmount: true,
                   monthlyFeeAllocatedAmount: true,
                 },
               });
+            const commissionAllocatedBefore =
+              restaurantMonth._sum.commissionAllocatedAmount ??
+              new Prisma.Decimal(0);
+            const monthlyFeeAllocatedBefore =
+              restaurantMonth._sum.monthlyFeeAllocatedAmount ??
+              new Prisma.Decimal(0);
             const effectiveCommissionCapAmount =
               input.commissionCapAmount === null
                 ? null
                 : Prisma.Decimal.max(
                     input.commissionCapAmount,
-                    existingLedger?.commissionAllocatedAmount ?? 0,
+                    commissionAllocatedBefore,
                   );
             const effectiveMonthlyFeeAmount = Prisma.Decimal.max(
               input.monthlyFeeAmount,
-              existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+              monthlyFeeAllocatedBefore,
             );
             const effectiveMonthlyFeeOutstandingAmount = Prisma.Decimal.max(
-              effectiveMonthlyFeeAmount.minus(
-                existingLedger?.monthlyFeeAllocatedAmount ?? 0,
-              ),
+              effectiveMonthlyFeeAmount.minus(monthlyFeeAllocatedBefore),
               0,
             );
             const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
@@ -1000,7 +1010,10 @@ export class PackagePlansRepository {
               })) + 1;
             const feePayoutCount = await tx.restaurantPayoutAllocation.count({
               where: {
-                ledgerId: ledger.id,
+                ledger: {
+                  restaurantId: input.restaurantId,
+                  localMonth: input.localMonth,
+                },
                 isSpecialPayout: false,
               },
             });
@@ -1008,7 +1021,7 @@ export class PackagePlansRepository {
               ? new Prisma.Decimal(0)
               : allocateMonthlyCommission({
                   grossAmount: input.grossCommissionableAmount,
-                  allocatedBefore: ledger.commissionAllocatedAmount,
+                  allocatedBefore: commissionAllocatedBefore,
                   commissionType: ledger.commissionType,
                   capAmount: ledger.commissionCapAmount,
                   percentage: ledger.commissionPercentage,
@@ -1020,7 +1033,7 @@ export class PackagePlansRepository {
               : allocateMonthlyFee({
                   payoutSequence: feePayoutCount + 1,
                   payoutOpportunities: ledger.payoutOpportunities,
-                  allocatedBefore: ledger.monthlyFeeAllocatedAmount,
+                  allocatedBefore: monthlyFeeAllocatedBefore,
                   availableAfterOtherDeductions:
                     input.availableForMonthlyFeeAmount,
                   monthlyFee: ledger.monthlyFeeAmount,
@@ -1089,6 +1102,7 @@ export class PackagePlansRepository {
     lockToken?: string;
     finalizedAt: Date;
     recipientEmail?: string;
+    automaticPayoutEligible: boolean;
     allocations: MonthlyPayoutAllocationInput[];
   }) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1204,6 +1218,21 @@ export class PackagePlansRepository {
                   },
                 })
               : null;
+            if (
+              input.automaticPayoutEligible &&
+              input.totalAmount.greaterThan(0)
+            ) {
+              await tx.automaticPayoutTransfer.create({
+                data: {
+                  tenantId: input.tenantId,
+                  restaurantId: input.restaurantId,
+                  generatedInvoiceId: invoice.id,
+                  amount: input.totalAmount.toDecimalPlaces(2),
+                  currency: input.currency,
+                  idempotencyKey: 'payout-invoice-' + invoice.id,
+                },
+              });
+            }
             return { invoice, outbox, created: true };
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -1560,34 +1589,33 @@ export class PackagePlansRepository {
         'Payout subscription does not belong to restaurant and tenant',
       );
     }
-    const existingLedger = await tx.restaurantPayoutMonthlyLedger.findUnique({
+    const restaurantMonth = await tx.restaurantPayoutMonthlyLedger.aggregate({
       where: {
-        restaurantId_subscriptionId_localMonth: {
-          restaurantId: input.restaurantId,
-          subscriptionId: input.subscriptionId,
-          localMonth: input.localMonth,
-        },
+        restaurantId: input.restaurantId,
+        localMonth: input.localMonth,
       },
-      select: {
+      _sum: {
         commissionAllocatedAmount: true,
         monthlyFeeAllocatedAmount: true,
       },
     });
+    const commissionAllocatedBefore =
+      restaurantMonth._sum.commissionAllocatedAmount ?? new Prisma.Decimal(0);
+    const monthlyFeeAllocatedBefore =
+      restaurantMonth._sum.monthlyFeeAllocatedAmount ?? new Prisma.Decimal(0);
     const effectiveCommissionCapAmount =
       input.commissionCapAmount === null
         ? null
         : Prisma.Decimal.max(
             input.commissionCapAmount,
-            existingLedger?.commissionAllocatedAmount ?? 0,
+            commissionAllocatedBefore,
           );
     const effectiveMonthlyFeeAmount = Prisma.Decimal.max(
       input.monthlyFeeAmount,
-      existingLedger?.monthlyFeeAllocatedAmount ?? 0,
+      monthlyFeeAllocatedBefore,
     );
     const effectiveMonthlyFeeOutstandingAmount = Prisma.Decimal.max(
-      effectiveMonthlyFeeAmount.minus(
-        existingLedger?.monthlyFeeAllocatedAmount ?? 0,
-      ),
+      effectiveMonthlyFeeAmount.minus(monthlyFeeAllocatedBefore),
       0,
     );
     const ledger = await tx.restaurantPayoutMonthlyLedger.upsert({
@@ -1641,13 +1669,19 @@ export class PackagePlansRepository {
         where: { ledgerId: ledger.id },
       })) + 1;
     const feePayoutCount = await tx.restaurantPayoutAllocation.count({
-      where: { ledgerId: ledger.id, isSpecialPayout: false },
+      where: {
+        ledger: {
+          restaurantId: input.restaurantId,
+          localMonth: input.localMonth,
+        },
+        isSpecialPayout: false,
+      },
     });
     const commissionAmount = input.isSpecialPayout
       ? new Prisma.Decimal(0)
       : allocateMonthlyCommission({
           grossAmount: input.grossCommissionableAmount,
-          allocatedBefore: ledger.commissionAllocatedAmount,
+          allocatedBefore: commissionAllocatedBefore,
           commissionType: ledger.commissionType,
           capAmount: ledger.commissionCapAmount,
           percentage: ledger.commissionPercentage,
@@ -1659,7 +1693,7 @@ export class PackagePlansRepository {
       : allocateMonthlyFee({
           payoutSequence: feePayoutCount + 1,
           payoutOpportunities: ledger.payoutOpportunities,
-          allocatedBefore: ledger.monthlyFeeAllocatedAmount,
+          allocatedBefore: monthlyFeeAllocatedBefore,
           availableAfterOtherDeductions: input.availableForMonthlyFeeAmount,
           monthlyFee: ledger.monthlyFeeAmount,
         });

@@ -1904,23 +1904,102 @@ export class PaymentsService {
       restaurant.id,
       await this.resolvePreferredCurrency(restaurant.id),
     );
-    const transactions = await this.prisma.restaurantWalletTransaction.findMany(
-      {
+    const [
+      transactions,
+      balanceSummary,
+      customerWalletExposure,
+      latestTransfer,
+    ] = await Promise.all([
+      this.prisma.restaurantWalletTransaction.findMany({
         where: { walletAccountId: wallet.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
-      },
-    );
-    const balanceSummary = await this.resolveRestaurantWalletBalanceSummary(
-      restaurant.id,
-      wallet.balance,
-    );
+      }),
+      this.resolveRestaurantWalletBalanceSummary(restaurant.id, wallet.balance),
+      this.prisma.walletAccount.aggregate({
+        where: { restaurantId: restaurant.id },
+        _count: { _all: true },
+        _sum: { balance: true },
+      }),
+      this.prisma.automaticPayoutTransfer.findFirst({
+        where: { restaurantId: restaurant.id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { state: true, provider: true, lastError: true },
+      }),
+    ]);
+    const payoutProviders = this.readRestaurantPayoutProviders(
+      restaurant.settings,
+    ).configurations;
+    const stripeEnabled = payoutProviders.STRIPE?.enabled === true;
+    const paypalEnabled = payoutProviders.PAYPAL?.enabled === true;
+    const currentPeriodNetContributionAmount =
+      balanceSummary.platformCollectedAmount === null ||
+      balanceSummary.commissionLiabilityAmount === null ||
+      balanceSummary.restaurantTransactionFeeAmount === null ||
+      balanceSummary.vatAmount === null
+        ? null
+        : Math.max(
+            balanceSummary.platformCollectedAmount -
+              balanceSummary.commissionLiabilityAmount -
+              balanceSummary.restaurantTransactionFeeAmount -
+              balanceSummary.vatAmount,
+            0,
+          );
+    const carryForwardAvailableAmount =
+      currentPeriodNetContributionAmount === null
+        ? null
+        : Math.max(
+            balanceSummary.availablePayoutBalance -
+              currentPeriodNetContributionAmount,
+            0,
+          );
 
     return {
       data: {
         ...wallet,
         balance: Number(wallet.balance),
         ...balanceSummary,
+        customerWalletExposure: {
+          accountCount: customerWalletExposure._count._all,
+          totalBalance: Number(customerWalletExposure._sum.balance ?? 0),
+        },
+        currentPeriodNetContributionAmount,
+        carryForwardAvailableAmount,
+        availablePayout: balanceSummary.availablePayoutBalance,
+        payoutCycle: balanceSummary.payoutCycle,
+        nextPayoutAt: balanceSummary.nextPayoutAt,
+        automaticPayout: {
+          enabled: stripeEnabled && !paypalEnabled,
+          provider:
+            stripeEnabled && !paypalEnabled
+              ? RestaurantPayoutProvider.STRIPE
+              : paypalEnabled && !stripeEnabled
+                ? RestaurantPayoutProvider.PAYPAL
+                : null,
+          status:
+            latestTransfer?.state ??
+            (stripeEnabled && !paypalEnabled
+              ? 'READY'
+              : stripeEnabled || paypalEnabled
+                ? 'BLOCKED'
+                : 'DISABLED'),
+          reason:
+            latestTransfer?.lastError ??
+            (stripeEnabled && paypalEnabled
+              ? 'Exactly one payout provider must be enabled for automatic payout'
+              : paypalEnabled
+                ? 'PayPal automatic payouts are disabled until asynchronous provider reconciliation is safe'
+                : stripeEnabled
+                  ? null
+                  : 'No approved and enabled Stripe payout configuration'),
+        },
+        monthlyFee: {
+          configuredAmount: balanceSummary.monthlyFeeAmount,
+          scheduledToDateAmount: balanceSummary.monthlyFeeScheduledToDate,
+          deductedThisMonthAmount: balanceSummary.monthlyFeeDeductedThisMonth,
+          dueNextPayoutAmount: balanceSummary.monthlyFeeDeductedAmount,
+          outstandingAmount: balanceSummary.monthlyFeeOutstandingAmount,
+        },
         transactions: transactions.map((item) => ({
           ...item,
           amount: Number(item.amount),
@@ -4994,6 +5073,8 @@ export class PaymentsService {
       totalDeductionsAmount: payoutSummary?.totalDeductionsAmount ?? null,
       availablePayoutBalance: Number(availablePayoutBalance),
       activePlan: payoutSummary?.activePlan ?? null,
+      payoutCycle: payoutSummary?.payoutCycle ?? null,
+      nextPayoutAt: payoutSummary?.nextPayoutAt ?? null,
     };
   }
 

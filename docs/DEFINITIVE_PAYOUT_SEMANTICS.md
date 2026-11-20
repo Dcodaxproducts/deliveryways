@@ -2,14 +2,24 @@
 
 ## Mid-month subscription changes
 
-A monthly ledger is scoped by restaurant, subscription, and restaurant-local month. Finalized invoice snapshots and allocation rows are immutable.
+A monthly ledger row retains its subscription identity for audit, while commission-cap and monthly-fee consumption are fenced and aggregated by restaurant and restaurant-local month. Finalized invoice snapshots and allocation rows are immutable.
 
 - **Decrease:** already allocated commission and monthly fees are never refunded or rewritten. The effective ledger cap/fee target is floored at the amount already allocated, so database constraints remain valid. The newly configured lower terms are used to calculate the next invoice; while they remain at or below the allocated amount, the next deduction is zero.
 - **Increase:** the effective target moves to the higher configured value. Future payouts may allocate only the remaining difference, using the current commission terms and payout cadence. Prior allocation snapshots remain unchanged.
-- **New subscription:** a new subscription ID creates a distinct monthly ledger, even for the same restaurant and local month. No allocation carries across subscription IDs.
+- **New subscription:** a replacement subscription ID creates a distinct audit ledger, but all ledgers for the same restaurant-local month contribute to the same commission cap, fee target, and fee-opportunity count. A replacement cannot grant a second cap or monthly fee.
 - **Plan/cadence change on the same subscription:** current terms govern future calculations. The ledger keeps the same allocation history and updates its effective target/cadence without modifying past invoices.
 
-No Redis cache is used. Allocation is a bounded serializable PostgreSQL transaction with one ledger lookup/upsert, bounded allocation counts, one allocation insert, and one ledger update. Serialization conflicts retry at most three times.
+No Redis cache is used. Allocation is a bounded serializable PostgreSQL transaction with one restaurant-month aggregate, one ledger upsert, bounded allocation counts, one allocation insert, and one ledger update. Serialization conflicts retry at most three times.
+
+## Automatic provider transfer
+
+Regular scheduled payout finalization creates one durable transfer row in the same serializable transaction as the immutable invoice. The generated invoice ID is the unique identity and Stripe idempotency key. A bounded hourly dispatcher claims at most 50 rows and reserves the finalized amount from the restaurant wallet before crossing the provider boundary.
+
+- Approved and enabled Stripe configurations transfer automatically.
+- PayPal remains explicitly blocked until asynchronous provider reconciliation is safe.
+- Expired pre-submission claims are retryable with bounded exponential backoff and an eight-attempt limit.
+- Once submission starts, a timeout, provider error, or provider-success/database-failure becomes UNKNOWN; automation never resends it. The reserved wallet debit and payout request preserve the financial fence pending operator reconciliation.
+- No Redis cache is used. Claims, invoice identity, wallet reservation, and recovery state are PostgreSQL-backed.
 
 ## Payout email delivery states
 
