@@ -75,6 +75,10 @@ describe('PaymentsService', () => {
       monthlyFeeDeductedThisMonth?: number;
       monthlyFeeOutstandingAmount?: number;
       previousPayoutAmount?: number;
+      priorPeriodEligiblePayoutAmount?: number;
+      currentPeriodEligiblePayoutAmount?: number;
+      availabilityAdjustmentAmount?: number;
+      availabilityLimitingReason?: string | null;
       totalDeductionsAmount?: number;
       restaurantPayoutAmount: number;
       currency: string;
@@ -1839,6 +1843,10 @@ describe('PaymentsService', () => {
       monthlyFeeDeductedThisMonth: null,
       monthlyFeeOutstandingAmount: null,
       previousPayoutAmount: 0,
+      priorPeriodEligiblePayoutAmount: null,
+      currentPeriodEligiblePayoutAmount: null,
+      availabilityAdjustmentAmount: null,
+      availabilityLimitingReason: null,
       totalDeductionsAmount: 130.9,
       availablePayoutBalance: 769.1,
       activePlan: {
@@ -2096,7 +2104,7 @@ describe('PaymentsService', () => {
     ).rejects.toThrow('Only Super Admin can update restaurant payment methods');
   });
 
-  it('returns authoritative wallet card fields from bounded sources', async () => {
+  it('returns an explicit availability adjustment when available is below current-period eligibility', async () => {
     const nextPayoutAt = new Date('2026-07-08T00:00:00.000Z');
     const { service, prisma } = makeService('development', {
       grossAmount: 1000,
@@ -2121,7 +2129,11 @@ describe('PaymentsService', () => {
       monthlyFeeDeductedAmount: 39.75,
       monthlyFeeDeductedThisMonth: 39.75,
       monthlyFeeOutstandingAmount: 119.25,
-      restaurantPayoutAmount: 900,
+      priorPeriodEligiblePayoutAmount: 100,
+      currentPeriodEligiblePayoutAmount: 740.5,
+      availabilityAdjustmentAmount: -240.5,
+      availabilityLimitingReason: 'LEDGER_BALANCE_LIMIT',
+      restaurantPayoutAmount: 600,
       currency: 'EUR',
       payoutCycle: PackagePayoutCycle.WEEKLY,
       nextPayoutAt,
@@ -2166,10 +2178,21 @@ describe('PaymentsService', () => {
 
     expect(result.data).toMatchObject({
       ledgerBalance: 1200,
-      availablePayout: 900,
+      availablePayout: 600,
       customerWalletExposure: { accountCount: 3, totalBalance: 125 },
       currentPeriodNetContributionAmount: 740.5,
-      carryForwardAvailableAmount: 159.5,
+      carryForwardAvailableAmount: 100,
+      priorPeriodEligiblePayoutAmount: 100,
+      currentPeriodEligiblePayoutAmount: 740.5,
+      availabilityAdjustmentAmount: -240.5,
+      availabilityLimitingReason: 'LEDGER_BALANCE_LIMIT',
+      payoutReconciliation: {
+        priorPeriodEligibleAmount: 100,
+        currentPeriodEligibleAmount: 740.5,
+        availabilityAdjustmentAmount: -240.5,
+        availablePayoutAmount: 600,
+        limitingReason: 'LEDGER_BALANCE_LIMIT',
+      },
       payoutCycle: PackagePayoutCycle.WEEKLY,
       nextPayoutAt,
       automaticPayout: {

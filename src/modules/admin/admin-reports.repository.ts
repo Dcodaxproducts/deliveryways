@@ -35,6 +35,11 @@ export interface AdminReportsScope {
   branchId?: string;
 }
 
+export interface GeneratedInvoiceListBoundaries {
+  from?: Date;
+  toExclusive?: Date;
+}
+
 const REPORTABLE_ORDER_STATUSES: readonly OrderStatus[] = [
   OrderStatus.PLACED,
   ...SUCCESSFUL_ORDER_STATUSES,
@@ -394,6 +399,7 @@ export class AdminReportsRepository {
   async listGeneratedInvoices(
     scope: AdminReportsScope,
     query: AdminGeneratedInvoicesQueryDto,
+    boundaries: GeneratedInvoiceListBoundaries = {},
   ) {
     return this.prisma.generatedInvoice.findMany({
       where: {
@@ -402,26 +408,32 @@ export class AdminReportsRepository {
         ...(scope.branchId
           ? { OR: [{ branchId: scope.branchId }, { branchId: null }] }
           : {}),
-        ...(query.kind
-          ? { kind: query.kind }
-          : query.excludeKind
-            ? { kind: { not: query.excludeKind } }
-            : {}),
+        ...(query.kinds?.length
+          ? { kind: { in: query.kinds } }
+          : query.kind
+            ? { kind: query.kind }
+            : query.excludeKind
+              ? { kind: { not: query.excludeKind } }
+              : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.subscriptionId
           ? { subscriptionId: query.subscriptionId }
           : {}),
         ...(query.orderId ? { orderId: query.orderId } : {}),
-        ...(query.fromDate || query.toDate
+        ...(boundaries.from || boundaries.toExclusive
           ? {
               createdAt: {
-                ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-                ...(query.toDate ? { lte: new Date(query.toDate) } : {}),
+                ...(boundaries.from ? { gte: boundaries.from } : {}),
+                ...(boundaries.toExclusive
+                  ? { lt: boundaries.toExclusive }
+                  : {}),
               },
             }
           : {}),
       },
-      orderBy: [{ createdAt: 'desc' }],
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      take: (query.limit ?? 50) + 1,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         invoiceNumber: true,
@@ -445,6 +457,44 @@ export class AdminReportsRepository {
         updatedAt: true,
         snapshot: true,
       },
+    });
+  }
+
+  listGeneratedInvoiceBranches(scope: AdminReportsScope, branchIds: string[]) {
+    return this.prisma.branch.findMany({
+      where: {
+        id: { in: branchIds },
+        deletedAt: null,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+      },
+      select: { id: true, name: true },
+    });
+  }
+
+  findGeneratedInvoiceTimezoneScope(scope: AdminReportsScope) {
+    if (scope.branchId) {
+      return this.prisma.branch.findFirst({
+        where: {
+          id: scope.branchId,
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+          ...(scope.restaurantId ? { restaurantId: scope.restaurantId } : {}),
+          deletedAt: null,
+        },
+        select: {
+          settings: true,
+          restaurant: { select: { settings: true } },
+        },
+      });
+    }
+    if (!scope.restaurantId) return null;
+    return this.prisma.restaurant.findFirst({
+      where: {
+        id: scope.restaurantId,
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        deletedAt: null,
+      },
+      select: { settings: true },
     });
   }
 

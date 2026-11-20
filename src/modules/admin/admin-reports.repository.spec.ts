@@ -538,4 +538,53 @@ describe('AdminReportsRepository', () => {
       status: PaymentStatus.REFUNDED,
     });
   });
+  it('bounds and cursor-paginates multi-kind generated invoice history without order queries', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const orderFindMany = jest.fn();
+    const repository = new AdminReportsRepository({
+      generatedInvoice: { findMany },
+      order: { findMany: orderFindMany },
+    } as never);
+
+    await repository.listGeneratedInvoices(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      {
+        kinds: ['SUBSCRIPTION', 'WEEKLY_PAYOUT'],
+        cursor: 'invoice-cursor',
+        limit: 50,
+      } as never,
+      {
+        from: new Date('2026-03-28T23:00:00.000Z'),
+        toExclusive: new Date('2026-03-29T22:00:00.000Z'),
+      },
+    );
+
+    type GeneratedInvoiceQuery = {
+      where: Record<string, unknown>;
+      cursor: { id: string };
+      skip: number;
+      take: number;
+      orderBy: Array<Record<string, string>>;
+    };
+    const calls = findMany.mock.calls as unknown as Array<
+      [GeneratedInvoiceQuery]
+    >;
+    const query = calls[0][0];
+    expect(query).toMatchObject({
+      where: {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        kind: { in: ['SUBSCRIPTION', 'WEEKLY_PAYOUT'] },
+        createdAt: {
+          gte: new Date('2026-03-28T23:00:00.000Z'),
+          lt: new Date('2026-03-29T22:00:00.000Z'),
+        },
+      },
+      cursor: { id: 'invoice-cursor' },
+      skip: 1,
+      take: 51,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    expect(orderFindMany).not.toHaveBeenCalled();
+  });
 });

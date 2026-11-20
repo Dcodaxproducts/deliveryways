@@ -563,6 +563,22 @@ export class AdminGeneratedInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @IsEnum(GeneratedInvoiceKind)
   kind?: GeneratedInvoiceKind;
 
+  @ApiPropertyOptional({ enum: GeneratedInvoiceKind, isArray: true })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string');
+    }
+    if (typeof value === 'string') {
+      return value.split(',').filter(Boolean);
+    }
+    return value === undefined ? undefined : [];
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(GeneratedInvoiceKind, { each: true })
+  kinds?: GeneratedInvoiceKind[];
+
   @ApiPropertyOptional({ enum: GeneratedInvoiceKind })
   @IsOptional()
   @IsEnum(GeneratedInvoiceKind)
@@ -592,6 +608,19 @@ export class AdminGeneratedInvoicesQueryDto extends AdminReportsScopedQueryDto {
   @IsOptional()
   @IsDateString()
   toDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @ApiPropertyOptional({ default: 50, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit: number = 50;
 }
 
 export class AdminGeneratedInvoicePdfQueryDto extends AdminReportsScopedQueryDto {

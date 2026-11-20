@@ -775,7 +775,7 @@ describe('PackagePlansService', () => {
     });
   });
 
-  it('separates current invoice-period totals from lifetime payout history', async () => {
+  it('carries all eligible funds forward from the durable unsettled boundary', async () => {
     const repository = {
       findRestaurantPayoutScope: jest.fn().mockResolvedValue({
         id: 'restaurant-1',
@@ -787,6 +787,9 @@ describe('PackagePlansService', () => {
         tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
       }),
       findActiveRestaurantSubscription: jest.fn().mockResolvedValue(null),
+      findRestaurantPayoutSchedule: jest.fn().mockResolvedValue({
+        lastFinalizedAt: new Date('2026-08-01T00:00:00.000Z'),
+      }),
       listRestaurantWalletPayoutOrders: jest.fn().mockResolvedValue([
         makePaidOrder({
           id: 'order-august',
@@ -847,6 +850,17 @@ describe('PackagePlansService', () => {
       platformCollectedAmount: 100,
     });
     expect(result.restaurantPayoutAmount).toBe(200);
+    expect(result.priorPeriodEligiblePayoutAmount).toBe(100);
+    expect(result.currentPeriodEligiblePayoutAmount).toBe(100);
+    expect(result.availabilityAdjustmentAmount).toBe(0);
+    expect(result.unsettledFrom).toEqual(new Date('2026-08-01T00:00:00.000Z'));
+    expect(repository.listRestaurantWalletPayoutOrders).toHaveBeenCalledWith(
+      'restaurant-1',
+      expect.objectContaining({
+        from: new Date('2026-08-01T00:00:00.000Z'),
+        take: 501,
+      }),
+    );
   });
 
   it('carries the remaining monthly fee into the current wallet payout', async () => {
@@ -932,7 +946,18 @@ describe('PackagePlansService', () => {
     });
     expect(repository.listRestaurantWalletPayoutOrders).toHaveBeenCalledWith(
       'restaurant-1',
+      {
+        from: new Date(0),
+        cursor: undefined,
+        take: 501,
+      },
     );
+    expect(repository.listRestaurantWalletPayoutOrders).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(
+      repository.listRestaurantMonthlyPayoutInvoices,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('reduces provider-collected payout and commission after a refund', async () => {
@@ -2819,5 +2844,42 @@ describe('PackagePlansService', () => {
         'Payout invoice finalized; email delivery requires reconciliation',
     });
     expect(persist).toHaveBeenCalledTimes(1);
+  });
+  it('pages unsettled wallet orders in fixed bounded cursor batches', async () => {
+    const firstPage = Array.from({ length: 501 }, (_, index) =>
+      makePaidOrder({ id: `order-${index}` }),
+    );
+    const listRestaurantWalletPayoutOrders = jest
+      .fn()
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce([makePaidOrder({ id: 'order-500' })]);
+    const service = new PackagePlansService({
+      listRestaurantWalletPayoutOrders,
+    } as never);
+    const boundedService = service as unknown as {
+      listBoundedRestaurantWalletPayoutOrders: (
+        restaurantId: string,
+        from: Date,
+      ) => Promise<Array<{ id: string }>>;
+    };
+    const from = new Date('2020-01-01T00:00:00.000Z');
+
+    const result = await boundedService.listBoundedRestaurantWalletPayoutOrders(
+      'restaurant-1',
+      from,
+    );
+
+    expect(result).toHaveLength(501);
+    expect(listRestaurantWalletPayoutOrders).toHaveBeenNthCalledWith(
+      1,
+      'restaurant-1',
+      { from, cursor: undefined, take: 501 },
+    );
+    expect(listRestaurantWalletPayoutOrders).toHaveBeenNthCalledWith(
+      2,
+      'restaurant-1',
+      { from, cursor: 'order-499', take: 501 },
+    );
+    expect(listRestaurantWalletPayoutOrders).toHaveBeenCalledTimes(2);
   });
 });

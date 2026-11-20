@@ -707,13 +707,22 @@ export class PackagePlansRepository {
     });
   }
 
-  listRestaurantWalletPayoutOrders(restaurantId: string) {
+  listRestaurantWalletPayoutOrders(
+    restaurantId: string,
+    input: { from: Date; cursor?: string; take: number },
+  ) {
     return this.prisma.order.findMany({
       where: {
         restaurantId,
         status: { in: SUCCESSFUL_ORDER_STATUSES },
+        OR: [
+          { paidAt: { gte: input.from } },
+          { paidAt: null, createdAt: { gte: input.from } },
+        ],
       },
-      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+      ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+      take: input.take,
+      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       select: {
         id: true,
         branchId: true,
@@ -748,6 +757,7 @@ export class PackagePlansRepository {
             ],
           },
           orderBy: [{ processedAt: 'asc' }, { createdAt: 'asc' }],
+          take: 101,
           select: {
             id: true,
             type: true,
@@ -776,19 +786,49 @@ export class PackagePlansRepository {
     });
   }
 
-  listRestaurantSpecialPayoutInvoices(restaurantId: string) {
+  listRestaurantSpecialPayoutInvoices(
+    restaurantId: string,
+    from: Date,
+    take: number,
+  ) {
     return this.prisma.generatedInvoice.findMany({
       where: {
         kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
         restaurantId,
         sourceKey: { contains: ':special:' },
+        OR: [{ periodTo: { gt: from } }, { createdAt: { gte: from } }],
       },
       select: {
         id: true,
         sourceKey: true,
         snapshot: true,
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take,
+    });
+  }
+
+  listRestaurantPayoutInvoicesSince(
+    restaurantId: string,
+    from: Date,
+    take: number,
+  ) {
+    return this.prisma.generatedInvoice.findMany({
+      where: {
+        kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        status: GeneratedInvoiceStatus.SENT,
+        restaurantId,
+        OR: [{ periodTo: { gt: from } }, { createdAt: { gte: from } }],
+      },
+      select: {
+        id: true,
+        sourceKey: true,
+        periodFrom: true,
+        periodTo: true,
+        snapshot: true,
+      },
+      orderBy: [{ periodFrom: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      take,
     });
   }
 

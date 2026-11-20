@@ -1950,13 +1950,7 @@ export class PaymentsService {
             0,
           );
     const carryForwardAvailableAmount =
-      currentPeriodNetContributionAmount === null
-        ? null
-        : Math.max(
-            balanceSummary.availablePayoutBalance -
-              currentPeriodNetContributionAmount,
-            0,
-          );
+      balanceSummary.priorPeriodEligiblePayoutAmount;
 
     return {
       data: {
@@ -1968,7 +1962,24 @@ export class PaymentsService {
           totalBalance: Number(customerWalletExposure._sum.balance ?? 0),
         },
         currentPeriodNetContributionAmount,
+        currentPeriodEligiblePayoutAmount:
+          balanceSummary.currentPeriodEligiblePayoutAmount,
+        priorPeriodEligiblePayoutAmount:
+          balanceSummary.priorPeriodEligiblePayoutAmount,
         carryForwardAvailableAmount,
+        availabilityAdjustmentAmount:
+          balanceSummary.availabilityAdjustmentAmount,
+        availabilityLimitingReason: balanceSummary.availabilityLimitingReason,
+        payoutReconciliation: {
+          priorPeriodEligibleAmount:
+            balanceSummary.priorPeriodEligiblePayoutAmount,
+          currentPeriodEligibleAmount:
+            balanceSummary.currentPeriodEligiblePayoutAmount,
+          availabilityAdjustmentAmount:
+            balanceSummary.availabilityAdjustmentAmount,
+          availablePayoutAmount: balanceSummary.availablePayoutBalance,
+          limitingReason: balanceSummary.availabilityLimitingReason,
+        },
         availablePayout: balanceSummary.availablePayoutBalance,
         payoutCycle: balanceSummary.payoutCycle,
         nextPayoutAt: balanceSummary.nextPayoutAt,
@@ -5024,6 +5035,14 @@ export class PaymentsService {
       monthlyFeeOutstandingAmount:
         payoutSummary?.monthlyFeeOutstandingAmount ?? null,
       previousPayoutAmount: billingPeriodSummary?.previousPayoutAmount ?? null,
+      priorPeriodEligiblePayoutAmount:
+        payoutSummary?.priorPeriodEligiblePayoutAmount ?? null,
+      currentPeriodEligiblePayoutAmount:
+        payoutSummary?.currentPeriodEligiblePayoutAmount ?? null,
+      availabilityAdjustmentAmount:
+        payoutSummary?.availabilityAdjustmentAmount ?? null,
+      availabilityLimitingReason:
+        payoutSummary?.availabilityLimitingReason ?? null,
       totalDeductionsAmount: payoutSummary?.totalDeductionsAmount ?? null,
       availablePayoutBalance: Number(availablePayoutBalance),
       activePlan: payoutSummary?.activePlan ?? null,

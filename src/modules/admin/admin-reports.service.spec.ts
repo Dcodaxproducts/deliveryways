@@ -1287,4 +1287,82 @@ describe('AdminReportsService', () => {
       message: 'Invoice generated and sent successfully',
     });
   });
+  it('returns cursor meta, branch display data, and restaurant-local inclusive day bounds', async () => {
+    const invoice = (id: string, branchId: string | null) => ({
+      id,
+      invoiceNumber: `INV-${id}`,
+      kind: 'SUBSCRIPTION',
+      status: 'ISSUED',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId,
+      customerId: null,
+      orderId: null,
+      subscriptionId: 'subscription-1',
+      periodFrom: null,
+      periodTo: null,
+      currency: 'EUR',
+      totalAmount: 100,
+      sentCount: 0,
+      downloadedCount: 0,
+      lastSentAt: null,
+      lastSentTo: null,
+      createdAt: new Date('2026-03-29T12:00:00.000Z'),
+      updatedAt: new Date('2026-03-29T12:00:00.000Z'),
+      snapshot: { restaurant: { name: 'Pizza House' } },
+    });
+    const repository = {
+      listGeneratedInvoices: jest
+        .fn()
+        .mockResolvedValue([
+          invoice('3', 'branch-1'),
+          invoice('2', null),
+          invoice('1', null),
+        ]),
+      listGeneratedInvoiceBranches: jest
+        .fn()
+        .mockResolvedValue([{ id: 'branch-1', name: 'Main Branch' }]),
+      findGeneratedInvoiceTimezoneScope: jest.fn().mockResolvedValue({
+        settings: { timezone: 'Europe/Berlin' },
+      }),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.listGeneratedInvoices(
+      {
+        uid: 'business-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      {
+        kinds: ['SUBSCRIPTION', 'WEEKLY_PAYOUT'],
+        fromDate: '2026-03-29',
+        toDate: '2026-03-29',
+        limit: 2,
+      } as never,
+    );
+
+    expect(repository.listGeneratedInvoices).toHaveBeenCalledWith(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      expect.objectContaining({
+        kinds: ['SUBSCRIPTION', 'WEEKLY_PAYOUT'],
+        restaurantId: 'restaurant-1',
+      }),
+      {
+        from: new Date('2026-03-28T23:00:00.000Z'),
+        toExclusive: new Date('2026-03-29T22:00:00.000Z'),
+      },
+    );
+    expect(result.meta).toEqual({
+      nextCursor: '2',
+      hasMore: true,
+      limit: 2,
+    });
+    expect(result.data[0].branch).toEqual({
+      id: 'branch-1',
+      name: 'Main Branch',
+    });
+    expect(repository.listGeneratedInvoiceBranches).toHaveBeenCalledTimes(1);
+  });
 });

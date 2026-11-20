@@ -755,4 +755,40 @@ describe('PackagePlansRepository monthly payout allocation', () => {
     expect(tx.generatedInvoice.update).toHaveBeenCalledTimes(1);
     expect(tx.generatedInvoiceEvent.create).toHaveBeenCalledTimes(1);
   });
+  it('bounds wallet payout orders by durable unsettled boundary and fixed cursor page', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PackagePlansRepository({
+      order: { findMany },
+    } as never);
+    const from = new Date('2026-08-01T00:00:00.000Z');
+
+    await repository.listRestaurantWalletPayoutOrders('restaurant-1', {
+      from,
+      cursor: 'order-100',
+      take: 501,
+    });
+
+    type WalletOrderQuery = {
+      where: Record<string, unknown>;
+      cursor: { id: string };
+      skip: number;
+      take: number;
+      orderBy: Array<Record<string, string>>;
+    };
+    const calls = findMany.mock.calls as unknown as Array<[WalletOrderQuery]>;
+    const query = calls[0][0];
+    expect(query).toMatchObject({
+      where: {
+        restaurantId: 'restaurant-1',
+        OR: [
+          { paidAt: { gte: from } },
+          { paidAt: null, createdAt: { gte: from } },
+        ],
+      },
+      cursor: { id: 'order-100' },
+      skip: 1,
+      take: 501,
+      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
+  });
 });

@@ -15,6 +15,7 @@ import {
 import { AuthUserContext } from '../../common/decorators';
 import { MailerService } from '../mailer/mailer.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
+import { restaurantLocalDayBoundary } from '../../common/utils/local-day-boundary';
 import { UserRoleEnum } from '../../common/enums';
 import { InvoicePdfBuilder } from '../../common/pdf/invoice-pdf.builder';
 import { InvoiceRecordsService } from '../invoices/invoice-records.service';
@@ -387,17 +388,72 @@ export class AdminReportsService {
       query.restaurantId,
       query.branchId,
     );
-    const invoices = await this.adminReportsRepository.listGeneratedInvoices(
-      scope,
-      {
-        ...query,
-        restaurantId: scope.restaurantId,
-        branchId: scope.branchId,
-      },
+    const timezone =
+      query.fromDate || query.toDate
+        ? await this.resolveGeneratedInvoiceTimezone(scope)
+        : 'UTC';
+    const scopedQuery = {
+      ...query,
+      restaurantId: scope.restaurantId,
+      branchId: scope.branchId,
+    };
+    const invoicesPlusOne =
+      query.fromDate || query.toDate
+        ? await this.adminReportsRepository.listGeneratedInvoices(
+            scope,
+            scopedQuery,
+            {
+              from: query.fromDate
+                ? restaurantLocalDayBoundary(
+                    query.fromDate.slice(0, 10),
+                    timezone,
+                  )
+                : undefined,
+              toExclusive: query.toDate
+                ? restaurantLocalDayBoundary(
+                    query.toDate.slice(0, 10),
+                    timezone,
+                    true,
+                  )
+                : undefined,
+            },
+          )
+        : await this.adminReportsRepository.listGeneratedInvoices(
+            scope,
+            scopedQuery,
+          );
+    const limit = query.limit ?? 50;
+    const hasMore = invoicesPlusOne.length > limit;
+    const invoices = invoicesPlusOne.slice(0, limit);
+    const branchIds = [
+      ...new Set(
+        invoices
+          .map((invoice) => invoice.branchId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const branches = branchIds.length
+      ? await this.adminReportsRepository.listGeneratedInvoiceBranches(
+          scope,
+          branchIds,
+        )
+      : [];
+    const branchNames = new Map(
+      branches.map((branch) => [branch.id, branch.name] as const),
     );
 
     return {
-      data: invoices.map((invoice) => this.toGeneratedInvoiceSummary(invoice)),
+      data: invoices.map((invoice) =>
+        this.toGeneratedInvoiceSummary(
+          invoice,
+          invoice.branchId ? branchNames.get(invoice.branchId) : undefined,
+        ),
+      ),
+      meta: {
+        nextCursor: hasMore ? (invoices.at(-1)?.id ?? null) : null,
+        hasMore,
+        limit,
+      },
       message: 'Generated invoices fetched successfully',
     };
   }
@@ -1185,9 +1241,11 @@ export class AdminReportsService {
     invoice: Awaited<
       ReturnType<AdminReportsRepository['listGeneratedInvoices']>
     >[number],
+    branchName?: string,
   ) {
     const snapshot = this.asObject(invoice.snapshot);
     const restaurant = this.asObject(snapshot.restaurant);
+    const branchSnapshot = this.asObject(snapshot.branch);
     const tenant = this.asObject(snapshot.tenant);
 
     return {
@@ -1219,11 +1277,49 @@ export class AdminReportsService {
         invoice.restaurantId && typeof restaurant.name === 'string'
           ? { id: invoice.restaurantId, name: restaurant.name }
           : null,
+      branch: invoice.branchId
+        ? {
+            id: invoice.branchId,
+            name:
+              branchName ??
+              (typeof branchSnapshot.name === 'string'
+                ? branchSnapshot.name
+                : 'Unknown branch'),
+          }
+        : null,
       tenant:
         invoice.tenantId && typeof tenant.name === 'string'
           ? { id: invoice.tenantId, name: tenant.name }
           : null,
     };
+  }
+
+  private async resolveGeneratedInvoiceTimezone(scope: AdminReportsScope) {
+    const timezoneScope =
+      await this.adminReportsRepository.findGeneratedInvoiceTimezoneScope(
+        scope,
+      );
+    const source = this.asObject(timezoneScope);
+    const restaurant = this.asObject(source.restaurant);
+    for (const candidate of [source.settings, restaurant.settings]) {
+      const settings = this.asObject(candidate);
+      const localization = this.asObject(settings.localization);
+      const businessHours = this.asObject(settings.businessHours);
+      for (const value of [
+        settings.timezone,
+        localization.timezone,
+        businessHours.timezone,
+      ]) {
+        if (typeof value !== 'string' || !value.trim()) continue;
+        try {
+          new Intl.DateTimeFormat('en', { timeZone: value }).format(new Date());
+          return value;
+        } catch {
+          continue;
+        }
+      }
+    }
+    return 'Europe/Berlin';
   }
 
   private toInvoiceSummary(

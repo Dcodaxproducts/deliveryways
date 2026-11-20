@@ -81,6 +81,11 @@ type SubscriptionPayoutActivity = Awaited<
   ReturnType<PackagePlansRepository['listSubscriptionPayoutActivity']>
 >[number];
 
+const WALLET_PAYOUT_ORDER_BATCH_SIZE = 500;
+const WALLET_PAYOUT_ORDER_MAX_BATCHES = 100;
+const WALLET_PAYOUT_TRANSACTION_MAX_PER_ORDER = 100;
+const WALLET_PAYOUT_INVOICE_MAX = 10_000;
+
 interface MonthlyBillingHistory {
   commissionDeductedAmount: Prisma.Decimal;
   monthlyFeeDeductedAmount: Prisma.Decimal;
@@ -711,20 +716,23 @@ export class PackagePlansService {
             this.toBillingMonth(now, payoutTimezone),
             payoutTimezone,
           );
-    const [orders, specialPayouts, currency, walletAccount, payoutSchedule] =
-      await Promise.all([
-        this.packagePlansRepository.listRestaurantWalletPayoutOrders(
-          restaurant.id,
-        ),
-        this.listSpecialPayoutSummary(restaurant.id),
-        this.resolveDefaultCurrency(),
-        this.packagePlansRepository.findRestaurantWalletAccount?.(
-          restaurant.id,
-        ) ?? Promise.resolve(null),
-        this.packagePlansRepository.findRestaurantPayoutSchedule?.(
-          restaurant.id,
-        ) ?? Promise.resolve(null),
-      ]);
+    const [currency, walletAccount, payoutSchedule] = await Promise.all([
+      this.resolveDefaultCurrency(),
+      this.packagePlansRepository.findRestaurantWalletAccount?.(
+        restaurant.id,
+      ) ?? Promise.resolve(null),
+      this.packagePlansRepository.findRestaurantPayoutSchedule?.(
+        restaurant.id,
+      ) ?? Promise.resolve(null),
+    ]);
+    const unsettledFrom = payoutSchedule?.lastFinalizedAt ?? new Date(0);
+    const [orders, specialPayouts] = await Promise.all([
+      this.listBoundedRestaurantWalletPayoutOrders(
+        restaurant.id,
+        unsettledFrom,
+      ),
+      this.listSpecialPayoutSummary(restaurant.id, unsettledFrom),
+    ]);
     const currentBillingMonth = this.toBillingMonth(now, payoutTimezone);
     const billingMonths = [
       ...new Set([
@@ -734,11 +742,24 @@ export class PackagePlansService {
         ),
       ]),
     ].sort();
+    const payoutHistoryInvoices =
+      await this.listBoundedRestaurantPayoutHistoryInvoices(
+        restaurant.id,
+        unsettledFrom,
+        billingMonths,
+        payoutTimezone,
+      );
+    if (payoutHistoryInvoices.length > WALLET_PAYOUT_INVOICE_MAX) {
+      throw new InternalServerErrorException(
+        'Payout invoice history exceeds the safe processing limit',
+      );
+    }
     const monthlyHistory = await this.listMonthlyBillingHistory(
       restaurant.id,
       billingMonths,
       undefined,
       payoutTimezone,
+      payoutHistoryInvoices,
     );
     const remainingCommissionCaps = new Map<string, Prisma.Decimal | null>();
     const payoutSummaryCommissionCaps = new Map<
@@ -961,6 +982,40 @@ export class PackagePlansService {
       .mul(vatPercentage)
       .div(100)
       .toDecimalPlaces(2);
+    const currentPeriodEligiblePayoutAmount = Prisma.Decimal.max(
+      billingPeriodPlatformCollectedAmount
+        .minus(billingPeriodCommissionAmount)
+        .minus(billingPeriodTransactionFeeAmount)
+        .minus(billingPeriodVatAmount)
+        .minus(billingPeriodPreviousPayoutAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const priorPeriodEligiblePayoutAmount = Prisma.Decimal.max(
+      platformCollectedAmount
+        .minus(billingPeriodPlatformCollectedAmount)
+        .minus(platformCommissionAmount.minus(billingPeriodCommissionAmount))
+        .minus(
+          restaurantTransactionFeeAmount.minus(
+            billingPeriodTransactionFeeAmount,
+          ),
+        )
+        .minus(payoutChargeVatAmount.minus(billingPeriodVatAmount))
+        .minus(previousPayoutAmount.minus(billingPeriodPreviousPayoutAmount)),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+    const availabilityAdjustmentAmount = restaurantPayoutAmount
+      .minus(currentPeriodEligiblePayoutAmount)
+      .minus(priorPeriodEligiblePayoutAmount)
+      .toDecimalPlaces(2);
+    const availabilityLimitingReason = ledgerBalance.lessThan(
+      calculatedRestaurantPayoutAmount,
+    )
+      ? 'LEDGER_BALANCE_LIMIT'
+      : monthlyFeeDeductedAmount.plus(monthlyFeeVatAmount).greaterThan(0)
+        ? 'MONTHLY_FEE_DEDUCTION'
+        : availabilityAdjustmentAmount.equals(0)
+          ? null
+          : 'CROSS_PERIOD_NETTING';
 
     return {
       ordersCount: lineItems.length,
@@ -980,6 +1035,20 @@ export class PackagePlansService {
       previousPayoutAmount: Number(previousPayoutAmount),
       billingMonth: currentBillingMonth,
       billingPeriod,
+      priorPeriodEligiblePayoutAmount: Number(priorPeriodEligiblePayoutAmount),
+      currentPeriodEligiblePayoutAmount: Number(
+        currentPeriodEligiblePayoutAmount,
+      ),
+      availabilityAdjustmentAmount: Number(availabilityAdjustmentAmount),
+      availabilityLimitingReason,
+      unsettledFrom,
+      processingBounds: {
+        orderBatchSize: WALLET_PAYOUT_ORDER_BATCH_SIZE,
+        maximumOrderBatches: WALLET_PAYOUT_ORDER_MAX_BATCHES,
+        maximumOrders:
+          WALLET_PAYOUT_ORDER_BATCH_SIZE * WALLET_PAYOUT_ORDER_MAX_BATCHES,
+        maximumTransactionsPerOrder: WALLET_PAYOUT_TRANSACTION_MAX_PER_ORDER,
+      },
       billingPeriodSummary: {
         ordersCount: billingPeriodLineItems.length,
         totalOrderAmount: Number(billingPeriodOrderAmount),
@@ -2370,11 +2439,92 @@ export class PackagePlansService {
     };
   }
 
-  private async listSpecialPayoutSummary(restaurantId: string) {
+  private async listBoundedRestaurantPayoutHistoryInvoices(
+    restaurantId: string,
+    from: Date,
+    billingMonths: string[],
+    timezone: string,
+  ) {
+    if (
+      typeof this.packagePlansRepository.listRestaurantPayoutInvoicesSince ===
+      'function'
+    ) {
+      return this.packagePlansRepository.listRestaurantPayoutInvoicesSince(
+        restaurantId,
+        from,
+        WALLET_PAYOUT_INVOICE_MAX + 1,
+      );
+    }
+
+    const sortedMonths = [...billingMonths].sort();
+    const lastMonth = sortedMonths.at(-1);
+    const to = lastMonth
+      ? this.resolveBillingMonthPeriod(lastMonth, timezone).to
+      : new Date();
+    return (
+      (await this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices?.(
+        restaurantId,
+        from,
+        to,
+      )) ?? []
+    );
+  }
+
+  private async listBoundedRestaurantWalletPayoutOrders(
+    restaurantId: string,
+    from: Date,
+  ): Promise<RestaurantPayoutOrder[]> {
+    const orders: RestaurantPayoutOrder[] = [];
+    let cursor: string | undefined;
+
+    for (let batch = 0; batch < WALLET_PAYOUT_ORDER_MAX_BATCHES; batch += 1) {
+      const page =
+        await this.packagePlansRepository.listRestaurantWalletPayoutOrders(
+          restaurantId,
+          {
+            from,
+            cursor,
+            take: WALLET_PAYOUT_ORDER_BATCH_SIZE + 1,
+          },
+        );
+      const hasMore = page.length > WALLET_PAYOUT_ORDER_BATCH_SIZE;
+      const boundedPage = page.slice(0, WALLET_PAYOUT_ORDER_BATCH_SIZE);
+      if (
+        boundedPage.some(
+          (order) =>
+            order.transactions.length > WALLET_PAYOUT_TRANSACTION_MAX_PER_ORDER,
+        )
+      ) {
+        throw new InternalServerErrorException(
+          'An order transaction history exceeds the safe processing limit',
+        );
+      }
+      orders.push(...boundedPage);
+      if (!hasMore) return orders;
+      cursor = boundedPage.at(-1)?.id;
+      if (!cursor) break;
+    }
+
+    throw new InternalServerErrorException(
+      'Unsettled payout history exceeds the safe processing limit',
+    );
+  }
+
+  private async listSpecialPayoutSummary(
+    restaurantId: string,
+    from = new Date(0),
+  ) {
     const invoices =
       await this.packagePlansRepository.listRestaurantSpecialPayoutInvoices?.(
         restaurantId,
+        from,
+        WALLET_PAYOUT_INVOICE_MAX + 1,
       );
+    if ((invoices?.length ?? 0) > WALLET_PAYOUT_INVOICE_MAX) {
+      throw new InternalServerErrorException(
+        'Payout invoice history exceeds the safe processing limit',
+      );
+    }
     const payoutAmountsByOrder = new Map<string, Prisma.Decimal>();
     let commissionAmount = new Prisma.Decimal(0);
 
@@ -2417,25 +2567,35 @@ export class PackagePlansService {
     billingMonths: string[],
     excludeSourceKey?: string,
     timezone = 'UTC',
+    prefetchedInvoices?: Awaited<
+      ReturnType<PackagePlansRepository['listRestaurantPayoutInvoicesSince']>
+    >,
   ) {
     const history = new Map<string, MonthlyBillingHistory>();
 
     if (
+      !prefetchedInvoices &&
       typeof this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices !==
-      'function'
+        'function'
     ) {
       return history;
     }
 
     for (const month of billingMonths) {
       const { from, to } = this.resolveBillingMonthPeriod(month, timezone);
-      const invoices =
-        await this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices(
-          restaurantId,
-          from,
-          to,
-          excludeSourceKey,
-        );
+      const invoices = prefetchedInvoices
+        ? prefetchedInvoices.filter(
+            (invoice) =>
+              (!excludeSourceKey || invoice.sourceKey !== excludeSourceKey) &&
+              (!invoice.periodFrom || invoice.periodFrom < to) &&
+              (!invoice.periodTo || invoice.periodTo > from),
+          )
+        : await this.packagePlansRepository.listRestaurantMonthlyPayoutInvoices(
+            restaurantId,
+            from,
+            to,
+            excludeSourceKey,
+          );
       let commissionDeductedAmount = new Prisma.Decimal(0);
       let monthlyFeeDeductedAmount = new Prisma.Decimal(0);
       let feePayoutCount = 0;
