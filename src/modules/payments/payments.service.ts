@@ -43,6 +43,7 @@ import {
   MarkSubscriptionManualPaidDto,
   PaypalPayoutEnvironment,
   RejectRestaurantPayoutProviderRequestDto,
+  ReconcileProviderPayoutDto,
   ListPaymentsDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
@@ -77,6 +78,7 @@ import {
   type PaypalOrderCredentials,
 } from './paypal-orders.service';
 import { OrdersService } from '../orders/orders.service';
+import { AutomaticPayoutDispatcherService } from './automatic-payout-dispatcher.service';
 
 export interface RestaurantStripeSettings {
   accountId: string | null;
@@ -173,6 +175,8 @@ export class PaymentsService {
     private readonly paypalOrdersService?: PaypalOrdersService,
     @Optional() private readonly configService?: ConfigService,
     @Optional() private readonly ordersService?: OrdersService,
+    @Optional()
+    private readonly automaticPayoutDispatcher?: AutomaticPayoutDispatcherService,
   ) {}
 
   async createSubscriptionAttempt(
@@ -2502,6 +2506,9 @@ export class PaymentsService {
     dto: CreateRestaurantProviderPayoutDto,
   ) {
     this.assertSuperAdminPaymentConfigAccess(user);
+    if (!this.automaticPayoutDispatcher) {
+      throw new ServiceUnavailableException('Payout executor is unavailable');
+    }
     const restaurant = await this.requireRestaurantForPayments(
       user,
       restaurantId,
@@ -2510,13 +2517,11 @@ export class PaymentsService {
       restaurant.settings,
       dto.provider,
     );
-
     if (!configuration?.enabled) {
       throw new BadRequestException(
         `${dto.provider} payouts are not approved for this restaurant`,
       );
     }
-
     const wallet = await this.ensureRestaurantWalletAccount(
       restaurant.tenantId,
       restaurant.id,
@@ -2526,109 +2531,58 @@ export class PaymentsService {
     await this.assertRestaurantPayoutAvailable(
       restaurant.id,
       amount,
-      wallet.balance,
+      wallet.balance.minus(wallet.reservedPayoutBalance),
     );
-
-    const idempotencyKey = dto.idempotencyKey.trim();
-    const pendingReference = `AUTO:${dto.provider}:${idempotencyKey}`;
-    let request = await this.prisma.restaurantPayoutRequest.findFirst({
-      where: {
-        restaurantId: restaurant.id,
-        bankDetails: {
-          path: ['idempotencyKey'],
-          equals: pendingReference,
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+    const request = await this.automaticPayoutDispatcher.executeManualPayout({
+      tenantId: restaurant.tenantId,
+      restaurantId: restaurant.id,
+      actorId: user.uid,
+      provider: dto.provider,
+      amount,
+      currency: (dto.currency ?? wallet.currency).trim().toUpperCase(),
+      idempotencyKey: dto.idempotencyKey.trim(),
+      description:
+        this.resolveOptionalString(dto.description) ??
+        `DeliveryWays restaurant payout ${restaurant.id}`,
     });
-
-    if (request?.status === RestaurantPayoutRequestStatus.PAID) {
-      return {
-        data: this.serializeRestaurantPayoutRequest(request),
-        message: 'Restaurant payout was already completed',
-      };
-    }
-
     if (!request) {
-      request = await this.prisma.restaurantPayoutRequest.create({
-        data: {
-          walletAccountId: wallet.id,
-          tenantId: restaurant.tenantId,
-          restaurantId: restaurant.id,
-          requestedBy: user.uid,
-          reviewedBy: user.uid,
-          status: RestaurantPayoutRequestStatus.APPROVED,
-          amount,
-          currency: (dto.currency ?? wallet.currency).trim().toUpperCase(),
-          bankDetails: {
-            provider: dto.provider,
-            idempotencyKey: pendingReference,
-            ...configuration.publicDetails,
-          } as Prisma.InputJsonValue,
-          note:
-            this.resolveOptionalString(dto.description) ??
-            `Automated ${dto.provider} payout`,
-          approvalNote: 'Approved provider payout initiated by super admin',
-          approvedAt: new Date(),
-        },
-      });
-    }
-
-    const description =
-      this.resolveOptionalString(dto.description) ??
-      `DeliveryWays restaurant payout ${restaurant.id}`;
-    let providerReference: string;
-
-    if (dto.provider === RestaurantPayoutProvider.STRIPE) {
-      const accountId = this.readString(configuration.publicDetails.accountId);
-      if (!accountId) {
-        throw new BadRequestException('Approved Stripe account ID is missing');
-      }
-      const stripeCredentials =
-        await this.resolveGlobalStripeCheckoutCredentials();
-      const transfer = await this.stripePaymentsService.createTransfer(
-        {
-          amount: Number(request.amount),
-          currency: request.currency,
-          destinationAccountId: accountId,
-          description,
-          idempotencyKey,
-          metadata: {
-            restaurantId: restaurant.id,
-            tenantId: restaurant.tenantId,
-            payoutRequestId: request.id,
-            actorId: user.uid,
-          },
-        },
-        stripeCredentials,
+      throw new ServiceUnavailableException(
+        'Payout completed without a durable request record',
       );
-      providerReference = transfer.id;
-    } else {
-      const credentials = this.readPaypalCredentials(
-        restaurant.id,
-        configuration,
-      );
-      const payout = await this.paypalPayoutsService.createPayout({
-        credentials,
-        amount: Number(request.amount),
-        currency: request.currency,
-        description,
-        idempotencyKey,
-      });
-      providerReference = payout.id;
     }
-
-    const completion = await this.completeRestaurantPayoutRequest(
-      user,
-      request.id,
-      providerReference,
-      `Automated ${dto.provider} payout completed`,
-    );
-
     return {
-      data: this.serializeRestaurantPayoutRequest(completion.data),
+      data: this.serializeRestaurantPayoutRequest(request),
       message: 'Restaurant provider payout completed successfully',
     };
+  }
+
+  async listProviderPayoutReconciliations(user: AuthUserContext) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    if (!this.automaticPayoutDispatcher) {
+      throw new ServiceUnavailableException('Payout executor is unavailable');
+    }
+    const data = await this.automaticPayoutDispatcher.listUnknownPayouts();
+    return { data, meta: { limit: 100 } };
+  }
+
+  async reconcileProviderPayout(
+    user: AuthUserContext,
+    id: string,
+    dto: ReconcileProviderPayoutDto,
+  ) {
+    this.assertSuperAdminPaymentConfigAccess(user);
+    if (!this.automaticPayoutDispatcher) {
+      throw new ServiceUnavailableException('Payout executor is unavailable');
+    }
+    const data = await this.automaticPayoutDispatcher.reconcileUnknownPayout({
+      id,
+      action: dto.action,
+      actorId: user.uid,
+      note: dto.note.trim(),
+      providerReference: dto.providerReference,
+      providerConfirmedNotSubmitted: dto.providerConfirmedNotSubmitted,
+    });
+    return { data, message: 'Provider payout reconciled successfully' };
   }
 
   async approveRestaurantPayoutRequest(
@@ -5133,7 +5087,14 @@ export class PaymentsService {
         );
       }
 
-      if (request.amount.greaterThan(request.walletAccount.balance)) {
+      if (
+        request.amount.greaterThan(
+          request.walletAccount.balance.minus(
+            request.walletAccount.reservedPayoutBalance ??
+              new Prisma.Decimal(0),
+          ),
+        )
+      ) {
         throw new BadRequestException(
           'Requested amount exceeds wallet balance',
         );
@@ -5162,7 +5123,7 @@ export class PaymentsService {
       const nextBalance = request.walletAccount.balance.minus(request.amount);
       await tx.restaurantWalletAccount.update({
         where: { id: request.walletAccountId },
-        data: { balance: nextBalance },
+        data: { balance: { decrement: request.amount } },
       });
       const walletTransaction = await tx.restaurantWalletTransaction.create({
         data: {
@@ -5281,7 +5242,7 @@ export class PaymentsService {
       const nextBalance = wallet.balance.plus(payment.amount);
       await tx.restaurantWalletAccount.update({
         where: { id: wallet.id },
-        data: { balance: nextBalance },
+        data: { balance: { increment: payment.amount } },
       });
       await tx.restaurantWalletTransaction.create({
         data: {
@@ -5359,7 +5320,7 @@ export class PaymentsService {
     const nextBalance = wallet.balance.minus(input.amount);
     await tx.restaurantWalletAccount.update({
       where: { id: wallet.id },
-      data: { balance: nextBalance },
+      data: { balance: { decrement: input.amount } },
     });
     await tx.restaurantWalletTransaction.create({
       data: {

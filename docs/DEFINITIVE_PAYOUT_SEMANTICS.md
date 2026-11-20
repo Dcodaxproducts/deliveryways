@@ -13,13 +13,24 @@ No Redis cache is used. Allocation is a bounded serializable PostgreSQL transact
 
 ## Automatic provider transfer
 
-Regular scheduled payout finalization creates one durable transfer row in the same serializable transaction as the immutable invoice. The generated invoice ID is the unique identity and Stripe idempotency key. A bounded hourly dispatcher claims at most 50 rows and reserves the finalized amount from the restaurant wallet before crossing the provider boundary.
+Scheduled and Superadmin-initiated provider payouts use the same durable transfer executor. Scheduled transfers use the generated invoice ID; manual transfers use a database-unique hash of restaurant, provider, and client idempotency key. The executor atomically reserves wallet capacity before crossing the provider boundary. A PostgreSQL partial unique index allows only one PREPARING, SENDING, or UNKNOWN transfer per restaurant, so manual and automatic execution cannot race.
 
-- Approved and enabled Stripe configurations transfer automatically.
-- PayPal remains explicitly blocked until asynchronous provider reconciliation is safe.
-- Expired pre-submission claims are retryable with bounded exponential backoff and an eight-attempt limit.
-- Once submission starts, a timeout, provider error, or provider-success/database-failure becomes UNKNOWN; automation never resends it. The reserved wallet debit and payout request preserve the financial fence pending operator reconciliation.
-- No Redis cache is used. Claims, invoice identity, wallet reservation, and recovery state are PostgreSQL-backed.
+- Approved and enabled Stripe configurations transfer automatically; explicit Superadmin payouts may use approved Stripe or PayPal configurations.
+- Reservation increments reserved_payout_balance without overwriting wallet balance. Delivery atomically decrements both balance and reservation exactly once; terminal pre-submission failure releases only the reservation.
+- Expired PREPARING leases recover only when the observed claim token and expiry still match. Expired SENDING leases become UNKNOWN.
+- PREPARING performs reservation and credential/destination validation. SENDING is recorded immediately before the external call.
+- Once submission starts, a timeout, provider error, or provider-success/database-failure becomes UNKNOWN; automation never resends it and retains the reservation pending reconciliation.
+- No Redis cache is used. Identity, claims, restaurant serialization, reservations, and reconciliation are PostgreSQL-backed.
+
+### Provider payout reconciliation
+
+- GET /payments/provider-payouts/reconciliation lists up to 100 UNKNOWN transfers for Superadmins.
+- POST /payments/provider-payouts/:id/reconcile accepts:
+  - DELIVERED: provider evidence and a unique provider reference complete the wallet debit exactly once.
+  - NOT_DELIVERED: provider proof releases the reservation exactly once and terminally fails the attempt.
+  - RESEND: only provider proof that no submission occurred releases the reservation and permits a new attempt with the same deterministic provider key.
+
+Rollback refuses to remove payout safety tables while any transfer row exists.
 
 ## Payout email delivery states
 

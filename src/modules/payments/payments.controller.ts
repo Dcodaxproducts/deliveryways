@@ -42,6 +42,7 @@ import {
   MarkRestaurantPayoutPaidDto,
   MarkSubscriptionManualPaidDto,
   RejectRestaurantPayoutProviderRequestDto,
+  ReconcileProviderPayoutDto,
   RefundPaymentDto,
   RestaurantPaymentManagementQueryDto,
   ReviewRestaurantPayoutRequestDto,
@@ -470,6 +471,28 @@ export class PaymentsController {
       restaurantId,
       dto,
     );
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Get('provider-payouts/reconciliation')
+  @ApiOperation({ summary: 'List provider payouts with an unknown outcome' })
+  listProviderPayoutReconciliations(@CurrentUser() user: AuthUserContext) {
+    return this.paymentsService.listProviderPayoutReconciliations(user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.SUPER_ADMIN)
+  @Post('provider-payouts/:id/reconcile')
+  @ApiOperation({ summary: 'Reconcile an unknown provider payout outcome' })
+  reconcileProviderPayout(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: ReconcileProviderPayoutDto,
+  ) {
+    return this.paymentsService.reconcileProviderPayout(user, id, dto);
   }
 
   @ApiBearerAuth()

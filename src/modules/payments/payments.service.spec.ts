@@ -313,6 +313,11 @@ describe('PaymentsService', () => {
         return undefined;
       }),
     };
+    const automaticPayoutDispatcher = {
+      executeManualPayout: jest.fn(),
+      listUnknownPayouts: jest.fn(),
+      reconcileUnknownPayout: jest.fn(),
+    };
 
     const service = new PaymentsService(
       paymentsRepository as never,
@@ -327,6 +332,8 @@ describe('PaymentsService', () => {
       packagePlansService as never,
       paypalOrdersService as never,
       configService as never,
+      undefined,
+      automaticPayoutDispatcher as never,
     );
 
     return {
@@ -338,6 +345,7 @@ describe('PaymentsService', () => {
       paypalPayoutsService,
       paypalOrdersService,
       payoutCredentialsService,
+      automaticPayoutDispatcher,
       loyaltyWalletService,
       globalSettingsService,
       mailerService,
@@ -1503,7 +1511,7 @@ describe('PaymentsService', () => {
     );
     expect(transactionTx.restaurantWalletAccount.update).toHaveBeenCalledWith({
       where: { id: 'wallet-1' },
-      data: { balance: new Prisma.Decimal(13) },
+      data: { balance: { decrement: new Prisma.Decimal(10) } },
     });
     expect(
       transactionTx.restaurantWalletTransaction.create,
@@ -3047,7 +3055,7 @@ describe('PaymentsService', () => {
 
     expect(prisma.restaurantWalletAccount.update).toHaveBeenCalledWith({
       where: { id: 'wallet-1' },
-      data: { balance: new Prisma.Decimal(500) },
+      data: { balance: { decrement: new Prisma.Decimal(500) } },
     });
     const walletTransactionCreateCalls = prisma.restaurantWalletTransaction
       .create.mock.calls as Array<
@@ -3192,10 +3200,9 @@ describe('PaymentsService', () => {
     });
   });
 
-  it('debits the wallet once after an approved Stripe provider payout succeeds', async () => {
-    const { service, prisma, stripePaymentsService, transactionTx } =
-      makeService();
-    const approvedRequest = {
+  it('delegates provider payouts to the durable executor', async () => {
+    const { service, prisma, automaticPayoutDispatcher } = makeService();
+    const paidRequest = {
       id: 'request-auto-1',
       walletAccountId: 'wallet-1',
       tenantId: 'tenant-1',
@@ -3203,23 +3210,20 @@ describe('PaymentsService', () => {
       branchId: null,
       requestedBy: 'super-1',
       reviewedBy: 'super-1',
-      paidBy: null,
-      status: RestaurantPayoutRequestStatus.APPROVED,
+      paidBy: 'super-1',
+      status: RestaurantPayoutRequestStatus.PAID,
       amount: new Prisma.Decimal(250),
       currency: 'EUR',
-      bankDetails: {
-        provider: 'STRIPE',
-        idempotencyKey: 'AUTO:STRIPE:payout-1',
-      },
+      bankDetails: { provider: 'STRIPE' },
       note: null,
       rejectionReason: null,
       approvalNote: null,
-      paymentReference: null,
-      paidNote: null,
+      paymentReference: 'tr_123',
+      paidNote: 'Provider payout completed',
       approvedAt: new Date(),
       rejectedAt: null,
-      paidAt: null,
-      walletTransactionId: null,
+      paidAt: new Date(),
+      walletTransactionId: 'wallet-tx-auto-1',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -3248,35 +3252,12 @@ describe('PaymentsService', () => {
       tenantId: 'tenant-1',
       restaurantId: 'restaurant-1',
       balance: new Prisma.Decimal(1000),
+      reservedPayoutBalance: new Prisma.Decimal(0),
       currency: 'EUR',
     });
-    prisma.restaurantPayoutRequest.findFirst.mockResolvedValue(null);
-    prisma.restaurantPayoutRequest.create.mockResolvedValue(approvedRequest);
-    prisma.restaurantPayoutRequest.findUnique.mockResolvedValue({
-      ...approvedRequest,
-      walletAccount: {
-        id: 'wallet-1',
-        balance: new Prisma.Decimal(1000),
-      },
-    });
-    prisma.restaurantWalletTransaction.findUnique.mockResolvedValue(null);
-    prisma.restaurantWalletTransaction.create.mockResolvedValue({
-      id: 'wallet-tx-auto-1',
-    });
-    prisma.restaurantPayoutRequest.update.mockResolvedValue({
-      ...approvedRequest,
-      status: RestaurantPayoutRequestStatus.PAID,
-      paidBy: 'super-1',
-      paidAt: new Date(),
-      paymentReference: 'tr_123',
-      walletTransactionId: 'wallet-tx-auto-1',
-    });
-    Object.assign(transactionTx, {
-      restaurantPayoutRequest: prisma.restaurantPayoutRequest,
-      restaurantWalletAccount: prisma.restaurantWalletAccount,
-      restaurantWalletTransaction: prisma.restaurantWalletTransaction,
-    });
-    stripePaymentsService.createTransfer.mockResolvedValue({ id: 'tr_123' });
+    automaticPayoutDispatcher.executeManualPayout.mockResolvedValue(
+      paidRequest,
+    );
 
     const result = await service.createRestaurantProviderPayout(
       { uid: 'super-1', role: UserRoleEnum.SUPER_ADMIN } as never,
@@ -3289,24 +3270,23 @@ describe('PaymentsService', () => {
       },
     );
 
-    expect(stripePaymentsService.createTransfer).toHaveBeenCalledWith(
+    expect(automaticPayoutDispatcher.executeManualPayout).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 250,
+        restaurantId: 'restaurant-1',
+        provider: RestaurantPayoutProvider.STRIPE,
+        amount: new Prisma.Decimal(250),
         currency: 'EUR',
-        destinationAccountId: 'acct_123',
         idempotencyKey: 'payout-1',
       }),
-      expect.objectContaining({ secretKey: 'sk_test_platform' }),
     );
-    expect(prisma.restaurantWalletAccount.update).toHaveBeenCalledWith({
-      where: { id: 'wallet-1' },
-      data: { balance: new Prisma.Decimal(750) },
-    });
     expect(result.data.status).toBe(RestaurantPayoutRequestStatus.PAID);
+    expect(result.message).toBe(
+      'Restaurant provider payout completed successfully',
+    );
   });
 
-  it('returns an already-paid provider payout without transferring again', async () => {
-    const { service, prisma, stripePaymentsService } = makeService();
+  it('returns the same delivered API contract for an idempotent replay', async () => {
+    const { service, prisma, automaticPayoutDispatcher } = makeService();
     prisma.restaurant.findFirst.mockResolvedValue({
       id: 'restaurant-1',
       tenantId: 'tenant-1',
@@ -3318,7 +3298,6 @@ describe('PaymentsService', () => {
                 provider: 'STRIPE',
                 enabled: true,
                 publicDetails: { accountId: 'acct_123' },
-                encryptedCredentials: null,
                 approvedAt: '2026-07-25T00:00:00.000Z',
                 approvedBy: 'super-1',
               },
@@ -3330,17 +3309,33 @@ describe('PaymentsService', () => {
     prisma.restaurantWalletAccount.upsert.mockResolvedValue({
       id: 'wallet-1',
       balance: new Prisma.Decimal(750),
+      reservedPayoutBalance: new Prisma.Decimal(0),
       currency: 'EUR',
     });
-    prisma.restaurantPayoutRequest.findFirst.mockResolvedValue({
+    automaticPayoutDispatcher.executeManualPayout.mockResolvedValue({
       id: 'request-auto-1',
+      walletAccountId: 'wallet-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      requestedBy: 'super-1',
+      reviewedBy: 'super-1',
+      paidBy: 'super-1',
       status: RestaurantPayoutRequestStatus.PAID,
       amount: new Prisma.Decimal(250),
       currency: 'EUR',
-      bankDetails: {
-        provider: 'STRIPE',
-        idempotencyKey: 'AUTO:STRIPE:payout-1',
-      },
+      bankDetails: { provider: 'STRIPE' },
+      note: null,
+      rejectionReason: null,
+      approvalNote: null,
+      paymentReference: 'tr_123',
+      paidNote: 'Provider payout completed',
+      approvedAt: new Date(),
+      rejectedAt: null,
+      paidAt: new Date(),
+      walletTransactionId: 'wallet-tx-auto-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     const result = await service.createRestaurantProviderPayout(
@@ -3354,8 +3349,9 @@ describe('PaymentsService', () => {
       },
     );
 
-    expect(stripePaymentsService.createTransfer).not.toHaveBeenCalled();
-    expect(prisma.restaurantWalletAccount.update).not.toHaveBeenCalled();
-    expect(result.message).toBe('Restaurant payout was already completed');
+    expect(automaticPayoutDispatcher.executeManualPayout).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(result.data.paymentReference).toBe('tr_123');
   });
 });

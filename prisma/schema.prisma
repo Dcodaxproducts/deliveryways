@@ -431,38 +431,38 @@ model Tenant {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  owner                  User?                           @relation("TenantOwner", fields: [ownerId], references: [id])
-  restaurants            Restaurant[]
-  branches               Branch[]
-  users                  User[]                          @relation("TenantUsers")
-  staffRoles             StaffRole[]
-  staffUsers             StaffUser[]
-  coupons                Coupon[]
-  carts                  Cart[]
-  orders                 Order[]
-  transactions           PaymentTransaction[]
-  walletAccounts         WalletAccount[]
-  walletTransactions     WalletTransaction[]
-  loyaltyPrograms        LoyaltyProgram[]
-  loyaltyAccounts        LoyaltyAccount[]
-  loyaltyTransactions    LoyaltyTransaction[]
-  notifications          Notification[]
-  pushDeviceTokens       PushDeviceToken[]
-  deliverymen            Deliveryman[]
-  chatThreads            ChatThread[]
-  groupOrders            GroupOrderSession[]
-  posOrderDrafts         PosOrderDraft[]
-  packagePlans           PackagePlan[]
-  tenantSubscriptions    TenantSubscription[]
-  subscriptionDeductions SubscriptionDeduction[]
-  payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerTenant")
-  payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleTenant")
-  payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxTenant")
+  owner                    User?                           @relation("TenantOwner", fields: [ownerId], references: [id])
+  restaurants              Restaurant[]
+  branches                 Branch[]
+  users                    User[]                          @relation("TenantUsers")
+  staffRoles               StaffRole[]
+  staffUsers               StaffUser[]
+  coupons                  Coupon[]
+  carts                    Cart[]
+  orders                   Order[]
+  transactions             PaymentTransaction[]
+  walletAccounts           WalletAccount[]
+  walletTransactions       WalletTransaction[]
+  loyaltyPrograms          LoyaltyProgram[]
+  loyaltyAccounts          LoyaltyAccount[]
+  loyaltyTransactions      LoyaltyTransaction[]
+  notifications            Notification[]
+  pushDeviceTokens         PushDeviceToken[]
+  deliverymen              Deliveryman[]
+  chatThreads              ChatThread[]
+  groupOrders              GroupOrderSession[]
+  posOrderDrafts           PosOrderDraft[]
+  packagePlans             PackagePlan[]
+  tenantSubscriptions      TenantSubscription[]
+  subscriptionDeductions   SubscriptionDeduction[]
+  payoutMonthlyLedgers     RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerTenant")
+  payoutSchedules          RestaurantPayoutSchedule[]      @relation("PayoutScheduleTenant")
+  payoutEmailOutbox        PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxTenant")
   automaticPayoutTransfers AutomaticPayoutTransfer[]       @relation("AutomaticPayoutTenant")
-  orderReviews           OrderReview[]
-  entityTranslations     EntityTranslation[]
-  contactSubmissions     ContactSubmission[]
-  tableReservations      TableReservation[]
+  orderReviews             OrderReview[]
+  entityTranslations       EntityTranslation[]
+  contactSubmissions       ContactSubmission[]
+  tableReservations        TableReservation[]
 
   @@map("tenants")
 }
@@ -489,45 +489,45 @@ model Restaurant {
   createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant                 Tenant                          @relation(fields: [tenantId], references: [id])
-  branches               Branch[]
-  users                  User[]                          @relation("RestaurantUsers")
-  staffRoles             StaffRole[]
-  staffUsers             StaffUser[]
-  restaurantMenus        RestaurantMenu[]
-  menuCategories         MenuCategory[]
-  menuItems              MenuItem[]
-  modifierCategories     ModifierCategory[]
-  modifierGroups         ModifierGroup[]
-  modifiers              Modifier[]
-  menuItemVariations     MenuItemVariation[]
-  inventoryCategories    InventoryCategory[]
-  inventoryItems         InventoryItem[]
-  coupons                Coupon[]
-  carts                  Cart[]
-  orders                 Order[]
-  transactions           PaymentTransaction[]
-  walletAccounts         WalletAccount[]
-  walletTransactions     WalletTransaction[]
-  loyaltyPrograms        LoyaltyProgram[]
-  loyaltyAccounts        LoyaltyAccount[]
-  loyaltyTransactions    LoyaltyTransaction[]
-  notifications          Notification[]
-  pushDeviceTokens       PushDeviceToken[]
-  deliverymen            Deliveryman[]
-  chatThreads            ChatThread[]
-  groupOrders            GroupOrderSession[]
-  posOrderDrafts         PosOrderDraft[]
-  tenantSubscriptions    TenantSubscription[]
-  subscriptionDeductions SubscriptionDeduction[]
-  payoutMonthlyLedgers   RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerRestaurant")
-  payoutSchedules        RestaurantPayoutSchedule[]      @relation("PayoutScheduleRestaurant")
-  payoutEmailOutbox      PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxRestaurant")
+  tenant                   Tenant                          @relation(fields: [tenantId], references: [id])
+  branches                 Branch[]
+  users                    User[]                          @relation("RestaurantUsers")
+  staffRoles               StaffRole[]
+  staffUsers               StaffUser[]
+  restaurantMenus          RestaurantMenu[]
+  menuCategories           MenuCategory[]
+  menuItems                MenuItem[]
+  modifierCategories       ModifierCategory[]
+  modifierGroups           ModifierGroup[]
+  modifiers                Modifier[]
+  menuItemVariations       MenuItemVariation[]
+  inventoryCategories      InventoryCategory[]
+  inventoryItems           InventoryItem[]
+  coupons                  Coupon[]
+  carts                    Cart[]
+  orders                   Order[]
+  transactions             PaymentTransaction[]
+  walletAccounts           WalletAccount[]
+  walletTransactions       WalletTransaction[]
+  loyaltyPrograms          LoyaltyProgram[]
+  loyaltyAccounts          LoyaltyAccount[]
+  loyaltyTransactions      LoyaltyTransaction[]
+  notifications            Notification[]
+  pushDeviceTokens         PushDeviceToken[]
+  deliverymen              Deliveryman[]
+  chatThreads              ChatThread[]
+  groupOrders              GroupOrderSession[]
+  posOrderDrafts           PosOrderDraft[]
+  tenantSubscriptions      TenantSubscription[]
+  subscriptionDeductions   SubscriptionDeduction[]
+  payoutMonthlyLedgers     RestaurantPayoutMonthlyLedger[] @relation("PayoutLedgerRestaurant")
+  payoutSchedules          RestaurantPayoutSchedule[]      @relation("PayoutScheduleRestaurant")
+  payoutEmailOutbox        PayoutInvoiceEmailOutbox[]      @relation("PayoutOutboxRestaurant")
   automaticPayoutTransfers AutomaticPayoutTransfer[]       @relation("AutomaticPayoutRestaurant")
-  orderReviews           OrderReview[]
-  entityTranslations     EntityTranslation[]
-  contactSubmissions     ContactSubmission[]
-  tableReservations      TableReservation[]
+  orderReviews             OrderReview[]
+  entityTranslations       EntityTranslation[]
+  contactSubmissions       ContactSubmission[]
+  tableReservations        TableReservation[]
 
   @@map("restaurants")
 }
@@ -1792,13 +1792,14 @@ model WalletTransaction {
 }
 
 model RestaurantWalletAccount {
-  id           String   @id @default(cuid())
-  tenantId     String   @map("tenant_id")
-  restaurantId String   @unique @map("restaurant_id")
-  balance      Decimal  @default(0) @db.Decimal(10, 2)
-  currency     String   @default("PKR")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id                    String   @id @default(cuid())
+  tenantId              String   @map("tenant_id")
+  restaurantId          String   @unique @map("restaurant_id")
+  balance               Decimal  @default(0) @db.Decimal(10, 2)
+  reservedPayoutBalance Decimal  @default(0) @map("reserved_payout_balance") @db.Decimal(10, 2)
+  currency              String   @default("PKR")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   transactions   RestaurantWalletTransaction[]
   payoutRequests RestaurantPayoutRequest[]
@@ -1859,7 +1860,8 @@ model RestaurantPayoutRequest {
   createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime                      @updatedAt @map("updated_at") @db.Timestamptz
 
-  walletAccount RestaurantWalletAccount @relation(fields: [walletAccountId], references: [id])
+  walletAccount   RestaurantWalletAccount  @relation(fields: [walletAccountId], references: [id])
+  payoutExecution AutomaticPayoutTransfer?
 
   @@index([restaurantId, status, createdAt])
   @@index([tenantId, status, createdAt])
@@ -2315,9 +2317,9 @@ model GeneratedInvoice {
   createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  events            GeneratedInvoiceEvent[]
-  payoutAllocations RestaurantPayoutAllocation[]
-  payoutEmailOutbox PayoutInvoiceEmailOutbox?
+  events                  GeneratedInvoiceEvent[]
+  payoutAllocations       RestaurantPayoutAllocation[]
+  payoutEmailOutbox       PayoutInvoiceEmailOutbox?
   automaticPayoutTransfer AutomaticPayoutTransfer?
 
   @@unique([kind, sourceKey], map: "generated_invoices_kind_source_key_key")
@@ -2439,13 +2441,15 @@ model AutomaticPayoutTransfer {
   id                  String                       @id @default(cuid())
   tenantId            String                       @map("tenant_id")
   restaurantId        String                       @map("restaurant_id")
-  generatedInvoiceId  String                       @unique @map("generated_invoice_id")
+  generatedInvoiceId  String?                      @unique @map("generated_invoice_id")
   payoutRequestId     String?                      @unique @map("payout_request_id")
   provider            String?                      @db.VarChar(24)
   state               AutomaticPayoutTransferState @default(PENDING)
   amount              Decimal                      @db.Decimal(12, 2)
   currency            String                       @db.VarChar(10)
   idempotencyKey      String                       @unique @map("idempotency_key") @db.VarChar(255)
+  requestedBy         String?                      @map("requested_by")
+  description         String?                      @db.VarChar(500)
   providerReference   String?                      @map("provider_reference") @db.VarChar(255)
   claimToken          String?                      @unique @map("claim_token") @db.VarChar(64)
   claimExpiresAt      DateTime?                    @map("claim_expires_at") @db.Timestamptz
@@ -2454,13 +2458,18 @@ model AutomaticPayoutTransfer {
   lastError           String?                      @map("last_error") @db.VarChar(1000)
   providerSubmittedAt DateTime?                    @map("provider_submitted_at") @db.Timestamptz
   completedAt         DateTime?                    @map("completed_at") @db.Timestamptz
+  reconciledAt        DateTime?                    @map("reconciled_at") @db.Timestamptz
+  reconciledBy        String?                      @map("reconciled_by")
+  reconciliationNote  String?                      @map("reconciliation_note") @db.VarChar(1000)
   createdAt           DateTime                     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime                     @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant           Tenant           @relation("AutomaticPayoutTenant", fields: [tenantId], references: [id], onDelete: Restrict)
-  restaurant       Restaurant       @relation("AutomaticPayoutRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
-  generatedInvoice GeneratedInvoice @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
+  tenant           Tenant                   @relation("AutomaticPayoutTenant", fields: [tenantId], references: [id], onDelete: Restrict)
+  restaurant       Restaurant               @relation("AutomaticPayoutRestaurant", fields: [restaurantId], references: [id], onDelete: Restrict)
+  generatedInvoice GeneratedInvoice?        @relation(fields: [generatedInvoiceId], references: [id], onDelete: Restrict)
+  payoutRequest    RestaurantPayoutRequest? @relation(fields: [payoutRequestId], references: [id], onDelete: Restrict)
 
+  @@unique([provider, providerReference], map: "automatic_payout_transfers_provider_reference_key")
   @@index([state, nextAttemptAt, claimExpiresAt, createdAt], map: "automatic_payout_transfers_dispatch_idx")
   @@index([restaurantId, createdAt], map: "automatic_payout_transfers_restaurant_idx")
   @@map("automatic_payout_transfers")

@@ -481,6 +481,34 @@ export class CreateRestaurantProviderPayoutDto {
   description?: string;
 }
 
+export enum PayoutReconciliationAction {
+  DELIVERED = 'DELIVERED',
+  NOT_DELIVERED = 'NOT_DELIVERED',
+  RESEND = 'RESEND',
+}
+
+export class ReconcileProviderPayoutDto {
+  @ApiProperty({ enum: PayoutReconciliationAction })
+  @IsEnum(PayoutReconciliationAction)
+  action!: PayoutReconciliationAction;
+
+  @ApiPropertyOptional({ maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  providerReference?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  providerConfirmedNotSubmitted?: boolean;
+
+  @ApiProperty({ maxLength: 1000 })
+  @IsString()
+  @MaxLength(1000)
+  note!: string;
+}
+
 export class RestaurantPayoutBankDetailsDto {
   @ApiPropertyOptional({ example: 'HBL' })
   @IsString()
