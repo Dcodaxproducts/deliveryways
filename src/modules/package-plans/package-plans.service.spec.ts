@@ -121,7 +121,20 @@ describe('PackagePlansService', () => {
     totalAmount: new Prisma.Decimal(1000),
     paidAt: new Date('2026-06-09T10:00:00.000Z'),
     createdAt: new Date('2026-06-09T09:55:00.000Z'),
-    branch: { id: 'branch-1', name: 'Main' },
+    branch: {
+      id: 'branch-1',
+      name: 'Main',
+      settings: {
+        address: {
+          street: 'Market Street',
+          shopNumber: '12A',
+          postalCode: '10115',
+          city: 'Berlin',
+          country: 'Germany',
+        },
+      },
+      manager: { profile: { firstName: 'Mina', lastName: 'Owner' } },
+    },
     transactions: [
       {
         id: 'txn-1',
@@ -1820,22 +1833,69 @@ describe('PackagePlansService', () => {
       findActiveRestaurantSubscription: jest
         .fn()
         .mockResolvedValue(makeSubscription()),
-      listPaidRestaurantOrders: jest.fn().mockResolvedValue([makePaidOrder()]),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          paidAt: new Date('2026-11-10T10:00:00.000Z'),
+          createdAt: new Date('2026-11-10T09:55:00.000Z'),
+        }),
+      ]),
     };
-    const service = new PackagePlansService(repository as never);
+    const globalSettingsService = {
+      getDefaultCurrencyCode: jest.fn().mockResolvedValue('EUR'),
+      getSettings: jest.fn().mockResolvedValue({
+        data: {
+          landingPageSettings: {
+            address: null,
+            legalProfile: {
+              businessAddress: {
+                street: 'Legal Street',
+                shopNumber: '9',
+                postalCode: '10117',
+                city: 'Berlin',
+                country: 'Germany',
+              },
+            },
+          },
+        },
+      }),
+    };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      globalSettingsService as never,
+    );
 
     const result = await service.downloadWeeklyPayoutInvoicePdf(superAdmin, {
       restaurantId: 'restaurant-1',
-      fromDate: '2026-06-04T00:00:00.000Z',
-      toDate: '2026-06-11T00:00:00.000Z',
+      fromDate: '2026-11-09T00:00:00.000Z',
+      toDate: '2026-11-16T00:00:00.000Z',
     });
     const pdfText = result.content.toString('utf8');
 
     expect(pdfText).toContain('Order Payout Details');
     expect(pdfText).toContain('Order ID');
     expect(pdfText).toContain('order-1');
+    expect(result.fileName).toBe(
+      'deliveryway-payout_shop-restaurant-1_2026-11-09_2026-11-15.pdf',
+    );
+    expect(result.metadata).toEqual({
+      shopId: 'restaurant-1',
+      periodFrom: '2026-11-09',
+      periodTo: '2026-11-15',
+    });
+    expect(pdfText).toContain('DeliveryWay Weekly Payout');
+    expect(pdfText).toContain('Legal Street 9, 10117 Berlin, Germany');
+    expect(pdfText).not.toContain('DATEV');
+    expect(pdfText).not.toContain('configure legal address');
+    expect(pdfText).toContain('Branch / Owner / Address');
+    expect(pdfText).toContain('Mina Owner');
+    expect(pdfText).toContain('Market Street 12A, 10115 Berlin');
+    expect(pdfText).not.toContain('Germany ·');
     expect(pdfText).toContain('Gross');
-    expect(pdfText).toContain('Net');
+    expect(pdfText).toContain('Commission');
+    expect(pdfText).toContain('VAT');
+    expect(pdfText).toContain('Payout');
+    expect(pdfText).toContain('Accounting invariant');
   });
 
   it('rebuilds a detailed payout PDF from a stored JSON snapshot', async () => {

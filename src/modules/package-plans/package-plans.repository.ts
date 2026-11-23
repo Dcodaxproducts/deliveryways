@@ -639,7 +639,18 @@ export class PackagePlansRepository {
         totalAmount: true,
         paidAt: true,
         createdAt: true,
-        branch: { select: { id: true, name: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            settings: true,
+            manager: {
+              select: {
+                profile: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        },
         transactions: {
           where: {
             OR: [
@@ -742,7 +753,18 @@ export class PackagePlansRepository {
         totalAmount: true,
         paidAt: true,
         createdAt: true,
-        branch: { select: { id: true, name: true } },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            settings: true,
+            manager: {
+              select: {
+                profile: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        },
         transactions: {
           where: {
             OR: [

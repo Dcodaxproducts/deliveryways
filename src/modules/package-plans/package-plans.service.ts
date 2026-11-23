@@ -1126,8 +1126,13 @@ export class PackagePlansService {
     }
 
     return {
-      fileName: `${invoice.invoiceNumber}.pdf`,
+      fileName: this.buildPayoutExportFileName(invoice),
       mimeType: 'application/pdf',
+      metadata: {
+        shopId: invoice.shopId ?? invoice.restaurant.id,
+        periodFrom: this.formatInvoiceDate(invoice.period.from),
+        periodTo: this.formatPayoutPeriodEnd(invoice.period.to),
+      },
       content,
     };
   }
@@ -2020,7 +2025,10 @@ export class PackagePlansService {
       true,
     );
     const specialPayouts = await this.listSpecialPayoutSummary(restaurant.id);
-    const defaultCurrency = await this.resolveDefaultCurrency();
+    const [defaultCurrency, platformLegalAddress] = await Promise.all([
+      this.resolveDefaultCurrency(),
+      this.resolveDeliveryWayLegalAddress(),
+    ]);
     const billingMonths = this.listPayoutBillingMonths(
       period,
       orders,
@@ -2230,10 +2238,10 @@ export class PackagePlansService {
         item.monthlyFeeAmount = lineFee;
         item.monthlyFeeVatAmount = lineFeeVat;
         item.vatAmount = item.vatAmount.plus(lineFeeVat).toDecimalPlaces(2);
-        item.restaurantPayoutAmount = item.restaurantPayoutAmount
-          .minus(lineFee)
-          .minus(lineFeeVat)
-          .toDecimalPlaces(2);
+        item.restaurantPayoutAmount = Prisma.Decimal.max(
+          item.restaurantPayoutAmount.minus(lineFee).minus(lineFeeVat),
+          new Prisma.Decimal(0),
+        ).toDecimalPlaces(2);
         monthlyFeeDeductedThisPayout =
           monthlyFeeDeductedThisPayout.minus(lineFee);
       }
@@ -2318,6 +2326,8 @@ export class PackagePlansService {
         period.from,
         period.to,
       ),
+      shopId: restaurant.id,
+      platformLegalAddress,
       restaurant: {
         id: restaurant.id,
         name: restaurant.name,
@@ -2352,6 +2362,14 @@ export class PackagePlansService {
       period,
       lineItems: lineItems.map((item) => ({
         ...item,
+        branch: item.branch
+          ? {
+              id: item.branch.id,
+              name: item.branch.name,
+              ownerName: this.resolveBranchOwnerName(item.branch),
+              address: this.resolveCompactBranchAddress(item.branch.settings),
+            }
+          : null,
         grossAmount: Number(item.grossAmount),
         totalOrderAmount: Number(item.totalOrderAmount),
         platformCommissionAmount: Number(item.platformCommissionAmount),
@@ -3843,7 +3861,7 @@ export class PackagePlansService {
     invoice: Awaited<
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
     >,
-  ) {
+  ): InvoicePdfSection {
     if (!invoice.lineItems.length) {
       return {
         title: 'Order Payout Details',
@@ -3858,26 +3876,48 @@ export class PackagePlansService {
       tables: [
         {
           columns: [
-            { header: 'Order ID', width: 106 },
-            { header: 'Paid At', width: 70 },
-            { header: 'Branch', width: 78 },
-            { header: 'Payment', width: 62 },
-            { header: `Gross (${invoice.totals.currency})`, width: 58 },
-            { header: 'Fee', width: 48 },
-            { header: 'Net', width: 58 },
+            { header: 'Order ID', width: 92 },
+            { header: 'Date', width: 62 },
+            { header: 'Branch / Owner / Address', width: 155 },
+            {
+              header: `Gross (${invoice.totals.currency})`,
+              width: 62,
+              align: 'right',
+            },
+            { header: 'Commission', width: 60, align: 'right' },
+            { header: 'VAT', width: 48, align: 'right' },
+            { header: 'Payout', width: 62, align: 'right' },
           ],
           rows: invoice.lineItems.map((item) => [
             item.orderId,
             this.formatInvoiceDate(item.paidAt),
-            item.branch?.name ?? 'N/A',
-            item.paymentMethod ?? 'N/A',
+            [item.branch?.name, item.branch?.ownerName, item.branch?.address]
+              .filter(Boolean)
+              .join(' · ') || 'N/A',
             this.formatInvoiceMoney(item.grossAmount),
             this.formatInvoiceMoney(item.platformCommissionAmount),
+            this.formatInvoiceMoney(item.vatAmount),
             this.formatInvoiceMoney(item.restaurantPayoutAmount),
           ]),
         },
       ],
       rows: [
+        ...[
+          ...new Map(
+            invoice.lineItems
+              .filter((item) => item.branch)
+              .map((item) => [
+                item.branch?.id,
+                [
+                  item.branch?.name,
+                  item.branch?.ownerName,
+                  item.branch?.address,
+                ]
+                  .filter(Boolean)
+                  .join(' · '),
+              ]),
+          ).values(),
+        ].map((branch) => `Branch: ${branch}`),
         `Total Orders: ${invoice.totals.ordersCount}`,
         `Total Successful Order Amount: ${this.formatInvoiceMoney(invoice.totals.totalOrderAmount)} ${invoice.totals.currency}`,
         `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
@@ -3972,13 +4012,16 @@ export class PackagePlansService {
     >,
   ) {
     return InvoicePdfBuilder.build({
-      title: `${this.formatInvoiceLabel(invoice.subscription?.payoutCycle ?? PackagePayoutCycle.WEEKLY)} Payout Invoice ${invoice.invoiceNumber}`,
+      title: `DeliveryWay ${this.formatInvoiceLabel(invoice.subscription?.payoutCycle ?? PackagePayoutCycle.WEEKLY)} Payout`,
       subtitle: invoice.restaurant.name,
       invoiceNumber: invoice.invoiceNumber,
       issuedAt: invoice.issuedAt,
       brandName: invoice.restaurant.name,
-      headerLines: this.deliveryWaysCompanyHeaderLines(),
+      headerLines: this.deliveryWaysCompanyHeaderLines(
+        invoice.platformLegalAddress,
+      ),
       meta: [
+        { label: 'Shop ID', value: invoice.shopId ?? invoice.restaurant.id },
         {
           label: 'Payout Cycle',
           value: this.formatInvoiceLabel(
@@ -3991,7 +4034,7 @@ export class PackagePlansService {
         },
         {
           label: 'Payout To',
-          value: this.formatInvoiceDate(invoice.period.to),
+          value: this.formatPayoutPeriodEnd(invoice.period.to),
         },
         { label: 'Orders Count', value: invoice.totals.ordersCount },
         { label: 'Currency', value: invoice.totals.currency },
@@ -4061,7 +4104,10 @@ export class PackagePlansService {
               ],
             },
           ],
-          rows: [invoice.note],
+          rows: [
+            invoice.note,
+            'Accounting invariant: payout due equals gross collected minus commission, VAT, restaurant-paid transaction fees, monthly fees, and prior payouts.',
+          ],
         },
         {
           title: 'Monthly Billing Status',
@@ -4691,11 +4737,71 @@ export class PackagePlansService {
     return null;
   }
 
-  private deliveryWaysCompanyHeaderLines() {
-    return [
-      'DeliveryWays company address: configure legal address',
-      'DATEV account mapping: revenue/debtor/tax placeholders',
-    ];
+  private deliveryWaysCompanyHeaderLines(legalAddress?: string | null) {
+    return legalAddress ? [legalAddress] : [];
+  }
+
+  private async resolveDeliveryWayLegalAddress() {
+    const settings = await this.globalSettingsService?.getSettings();
+    const landing = settings?.data?.landingPageSettings;
+    const profile = landing?.legalProfile;
+    const address = profile?.businessAddress;
+    if (!address) return landing?.address?.trim() || null;
+
+    const parts = [
+      [address.street, address.shopNumber].filter(Boolean).join(' '),
+      [address.postalCode, address.city].filter(Boolean).join(' '),
+      address.country,
+    ].filter((part): part is string => Boolean(part));
+    return parts.join(', ') || landing?.address?.trim() || null;
+  }
+
+  private resolveBranchOwnerName(branch: RestaurantPayoutOrder['branch']) {
+    const profile = branch?.manager?.profile;
+    const name = [profile?.firstName, profile?.lastName]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
+    return name || null;
+  }
+
+  private resolveCompactBranchAddress(settings: Prisma.JsonValue | null) {
+    const root = this.asJsonObject(settings);
+    const address = this.asJsonObject(
+      this.readFirstPath(root, [
+        ['legalProfile', 'businessAddress'],
+        ['businessAddress'],
+        ['address'],
+      ]),
+    );
+    const street = [address.street, address.shopNumber]
+      .map((value) => this.readStringValue(value))
+      .filter(Boolean)
+      .join(' ');
+    const city = [address.postalCode, address.city]
+      .map((value) => this.readStringValue(value))
+      .filter(Boolean)
+      .join(' ');
+    return [street, city].filter(Boolean).join(', ') || null;
+  }
+
+  private formatPayoutPeriodEnd(value: Date) {
+    return this.formatInvoiceDate(new Date(value.getTime() - 1));
+  }
+
+  private buildPayoutExportFileName(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    return (
+      [
+        'deliveryway-payout',
+        `shop-${invoice.shopId ?? invoice.restaurant.id}`,
+        this.formatInvoiceDate(invoice.period.from),
+        this.formatPayoutPeriodEnd(invoice.period.to),
+      ].join('_') + '.pdf'
+    );
   }
 
   private buildDatevCsv(
