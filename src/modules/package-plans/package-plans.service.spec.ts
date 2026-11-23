@@ -1498,6 +1498,68 @@ describe('PackagePlansService', () => {
     });
   });
 
+  it('reconciles mixed payment payout totals against all commission and VAT liabilities', async () => {
+    const subscription = makeSubscription({
+      planSnapshot: {
+        ...makeSubscription().planSnapshot,
+        planPrice: 0,
+        commissionPercentage: 5,
+        vatPercentage: 19,
+      },
+      packagePlan: makePlan({
+        planPrice: new Prisma.Decimal(0),
+        commissionPercentage: new Prisma.Decimal(5),
+        vatPercentage: new Prisma.Decimal(19),
+      }),
+    });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(subscription),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          totalAmount: new Prisma.Decimal('173.50'),
+          transactions: [
+            {
+              ...makePaidOrder().transactions[0],
+              amount: new Prisma.Decimal('173.50'),
+            },
+          ],
+        }),
+        makePaidOrder({
+          id: 'order-cod',
+          paymentMethod: PaymentMethod.COD,
+          totalAmount: new Prisma.Decimal('150.60'),
+          transactions: [],
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+
+    const result = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-11-09T00:00:00.000Z',
+      toDate: '2026-11-16T00:00:00.000Z',
+    });
+
+    expect(result.data.totals).toMatchObject({
+      totalOrderAmount: 324.1,
+      grossAmount: 173.5,
+      platformCommissionAmount: 16.21,
+      vatAmount: 3.08,
+      restaurantPayoutAmount: 154.21,
+    });
+  });
+
   it('deducts only the remaining calendar-month commission cap', async () => {
     const order = makePaidOrder({
       totalAmount: new Prisma.Decimal(700),
@@ -1873,10 +1935,10 @@ describe('PackagePlansService', () => {
     const pdfText = result.content.toString('utf8');
 
     expect(pdfText).toContain('Order Payout Details');
-    expect(pdfText).toContain('Order ID');
+    expect(pdfText).toContain('Order Number');
     expect(pdfText).toContain('order-1');
     expect(result.fileName).toBe(
-      'deliveryway-payout_shop-restaurant-1_2026-11-09_2026-11-15.pdf',
+      'deliveryway-payout_shop-restaurant-1_2026-11-09_to_2026-11-15.pdf',
     );
     expect(result.metadata).toEqual({
       shopId: 'restaurant-1',
@@ -1887,14 +1949,15 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Legal Street 9, 10117 Berlin, Germany');
     expect(pdfText).not.toContain('DATEV');
     expect(pdfText).not.toContain('configure legal address');
-    expect(pdfText).toContain('Branch / Owner / Address');
+    expect(pdfText).toContain('Order Number');
+    expect(pdfText).toContain('Order Date and Time');
+    expect(pdfText).toContain('Paid With');
+    expect(pdfText).toContain('Total \\(EUR\\)');
+    expect(pdfText).toContain('10.11.2026, 11:00');
+    expect(pdfText).toContain('Stripe');
     expect(pdfText).toContain('Mina Owner');
     expect(pdfText).toContain('Market Street 12A, 10115 Berlin');
     expect(pdfText).not.toContain('Germany ·');
-    expect(pdfText).toContain('Gross');
-    expect(pdfText).toContain('Commission');
-    expect(pdfText).toContain('VAT');
-    expect(pdfText).toContain('Payout');
     expect(pdfText).toContain('Accounting invariant');
   });
 

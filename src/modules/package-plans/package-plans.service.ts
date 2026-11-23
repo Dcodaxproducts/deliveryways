@@ -2315,9 +2315,18 @@ export class PackagePlansService {
     const monthlyFeeOutstandingAmount = this.sumDecimalValues(
       monthlyBilling.map((item) => item.monthlyFeeOutstandingAmount),
     );
-    const restaurantPayoutAmount = this.sumDecimalValues(
-      lineItems.map((item) => item.restaurantPayoutAmount),
-    );
+    // The payout summary is an aggregate settlement. Offline-order commission and
+    // VAT are liabilities against platform-held funds, so calculating per-row and
+    // clamping each row would overstate the final payout.
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      grossAmount
+        .minus(platformCommissionAmount)
+        .minus(restaurantTransactionFeeAmount)
+        .minus(vatAmount)
+        .minus(previousPayoutAmount)
+        .minus(monthlyFeeDeductedAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
     const currency = defaultCurrency;
 
     return {
@@ -3876,28 +3885,23 @@ export class PackagePlansService {
       tables: [
         {
           columns: [
-            { header: 'Order ID', width: 92 },
-            { header: 'Date', width: 62 },
-            { header: 'Branch / Owner / Address', width: 155 },
+            { header: 'Order Number', width: 150 },
+            { header: 'Order Date and Time', width: 140 },
+            { header: 'Paid With', width: 100 },
             {
-              header: `Gross (${invoice.totals.currency})`,
-              width: 62,
+              header: `Total (${invoice.totals.currency})`,
+              width: 109,
               align: 'right',
             },
-            { header: 'Commission', width: 60, align: 'right' },
-            { header: 'VAT', width: 48, align: 'right' },
-            { header: 'Payout', width: 62, align: 'right' },
           ],
           rows: invoice.lineItems.map((item) => [
             item.orderId,
-            this.formatInvoiceDate(item.paidAt),
-            [item.branch?.name, item.branch?.ownerName, item.branch?.address]
-              .filter(Boolean)
-              .join(' · ') || 'N/A',
-            this.formatInvoiceMoney(item.grossAmount),
-            this.formatInvoiceMoney(item.platformCommissionAmount),
-            this.formatInvoiceMoney(item.vatAmount),
-            this.formatInvoiceMoney(item.restaurantPayoutAmount),
+            this.formatInvoiceDateTime(
+              item.paidAt,
+              invoice.restaurant.timezone,
+            ),
+            this.formatInvoiceLabel(item.paymentMethod ?? 'N/A'),
+            this.formatInvoiceMoney(item.totalOrderAmount),
           ]),
         },
       ],
@@ -4794,12 +4798,13 @@ export class PackagePlansService {
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
     >,
   ) {
+    const periodFrom = this.formatInvoiceDate(invoice.period.from);
+    const periodTo = this.formatPayoutPeriodEnd(invoice.period.to);
     return (
       [
         'deliveryway-payout',
         `shop-${invoice.shopId ?? invoice.restaurant.id}`,
-        this.formatInvoiceDate(invoice.period.from),
-        this.formatPayoutPeriodEnd(invoice.period.to),
+        `${periodFrom}_to_${periodTo}`,
       ].join('_') + '.pdf'
     );
   }
@@ -4903,6 +4908,22 @@ export class PackagePlansService {
 
   private formatInvoiceDate(value: Date | null | undefined) {
     return value ? value.toISOString().slice(0, 10) : 'N/A';
+  }
+
+  private formatInvoiceDateTime(
+    value: Date | null | undefined,
+    timeZone: string,
+  ) {
+    if (!value) return 'N/A';
+    return new Intl.DateTimeFormat('de-DE', {
+      timeZone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(value);
   }
 
   private parseStoredInvoiceDate(value: unknown) {
