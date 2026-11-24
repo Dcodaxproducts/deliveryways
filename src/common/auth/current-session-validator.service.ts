@@ -138,14 +138,24 @@ export class CurrentSessionValidator {
       },
     });
 
+    const isBusinessAdmin =
+      dbUser?.role === 'BUSINESS_ADMIN' &&
+      String(user.role) === 'BUSINESS_ADMIN';
+    const restaurantScopeMatches = isBusinessAdmin
+      ? user.rid === null || dbUser?.restaurantId === user.rid
+      : dbUser?.restaurantId === (user.rid ?? null);
+    const branchScopeMatches = isBusinessAdmin
+      ? user.bid === null || dbUser?.branchId === user.bid
+      : dbUser?.branchId === (user.bid ?? null);
+
     if (
       !dbUser ||
       dbUser.authVersion !== user.ver ||
       !dbUser.isActive ||
       String(dbUser.role) !== String(user.role) ||
       dbUser.tenantId !== (user.tid ?? null) ||
-      dbUser.restaurantId !== (user.rid ?? null) ||
-      dbUser.branchId !== (user.bid ?? null)
+      !restaurantScopeMatches ||
+      !branchScopeMatches
     ) {
       throw new UnauthorizedException('Session is no longer valid');
     }

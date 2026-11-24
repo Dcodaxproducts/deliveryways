@@ -120,6 +120,65 @@ describe('CurrentSessionValidator', () => {
     );
   });
 
+  it('accepts an intentionally unscoped business admin token', async () => {
+    const businessAdmin = {
+      ...baseUser,
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      rid: null,
+      bid: null,
+    } as unknown as AuthUserContext;
+    prisma.user.findUnique.mockResolvedValue({
+      ...validUser,
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+
+    await expect(
+      validator.assertCurrentSession(businessAdmin),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ['restaurant', { rid: 'restaurant-2', bid: null }],
+    ['branch', { rid: null, bid: 'branch-2' }],
+  ])(
+    'rejects a business admin token with a mismatched non-null %s scope',
+    async (_scope, tokenScope) => {
+      const businessAdmin = {
+        ...baseUser,
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        ...tokenScope,
+      } as unknown as AuthUserContext;
+      prisma.user.findUnique.mockResolvedValue({
+        ...validUser,
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      });
+
+      await expect(
+        validator.assertCurrentSession(businessAdmin),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    },
+  );
+
+  it.each([UserRoleEnum.CUSTOMER, UserRoleEnum.BRANCH_ADMIN])(
+    'keeps exact scope validation for %s users',
+    async (role) => {
+      const unscopedUser = {
+        ...baseUser,
+        role,
+        rid: null,
+        bid: null,
+      } as unknown as AuthUserContext;
+      prisma.user.findUnique.mockResolvedValue({
+        ...validUser,
+        role,
+      });
+
+      await expect(
+        validator.assertCurrentSession(unscopedUser),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    },
+  );
+
   it('rejects token scope after the database scope changes', async () => {
     prisma.user.findUnique.mockResolvedValue({
       ...validUser,
