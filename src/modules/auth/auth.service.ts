@@ -1657,12 +1657,22 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    const isBusinessAdmin =
+      payload.role === UserRoleEnum.BUSINESS_ADMIN &&
+      dbUser.role === 'BUSINESS_ADMIN';
+    const restaurantScopeMatches = isBusinessAdmin
+      ? payload.rid === null || payload.rid === dbUser.restaurantId
+      : payload.rid === dbUser.restaurantId;
+    const branchScopeMatches = isBusinessAdmin
+      ? payload.bid === null || payload.bid === dbUser.branchId
+      : payload.bid === dbUser.branchId;
+
     if (
       payload.ver !== dbUser.authVersion ||
       payload.role !== dbUser.role ||
       payload.tid !== dbUser.tenantId ||
-      payload.rid !== dbUser.restaurantId ||
-      payload.bid !== dbUser.branchId
+      !restaurantScopeMatches ||
+      !branchScopeMatches
     ) {
       throw new UnauthorizedException('Invalid refresh token');
     }

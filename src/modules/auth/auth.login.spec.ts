@@ -33,6 +33,7 @@ describe('AuthService login', () => {
       findByEmail: jest.fn(),
       findByEmailIncludingDeleted: jest.fn(),
       findManyForDevResolution: jest.fn(),
+      findById: jest.fn(),
       cancelDeleteUser: jest.fn(),
       setRefreshTokenHash: jest.fn(),
     };
@@ -856,6 +857,144 @@ describe('AuthService login', () => {
     });
     expect(result.data.accessToken).toBe('access-token');
     expect(result.data.user.twoFactorEnabled).toBe(true);
+  });
+
+  it('refreshes a freshly issued unscoped business admin token when the stored user remains scoped', async () => {
+    const businessAdmin = {
+      id: 'business-admin-1',
+      email: 'owner@example.com',
+      password: 'hashed-password',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      refreshTokenHash: null as string | null,
+      authVersion: 4,
+      isVerified: true,
+      isApproved: true,
+      isActive: true,
+      isGuest: false,
+      deletedAt: null,
+      deleteAfter: null,
+      profile: null,
+    };
+    usersService.findManyForDevResolution!.mockResolvedValue([businessAdmin]);
+    usersService.setRefreshTokenHash!.mockImplementation(
+      (_userId: string, refreshTokenHash: string | null) => {
+        businessAdmin.refreshTokenHash = refreshTokenHash;
+        return Promise.resolve();
+      },
+    );
+    usersService.findById!.mockImplementation(() =>
+      Promise.resolve(businessAdmin),
+    );
+    jwtService.verifyAsync.mockResolvedValue({
+      uid: businessAdmin.id,
+      type: 'refresh',
+      actorType: 'USER',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+      tid: businessAdmin.tenantId,
+      rid: null,
+      bid: null,
+      ver: businessAdmin.authVersion,
+    });
+
+    const loginResult = await service.login({
+      email: businessAdmin.email,
+      password: 'Password@123',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    });
+
+    expect(loginResult.data.refreshToken).toBe('refresh-token');
+    expect(businessAdmin.refreshTokenHash).toBe('hashed-refresh');
+
+    const refreshResult = await service.refreshTokens({
+      refreshToken: loginResult.data.refreshToken,
+    });
+
+    expect(usersService.findById).toHaveBeenCalledWith(businessAdmin.id);
+    expect(bcrypt.compare).toHaveBeenLastCalledWith(
+      'refresh-token',
+      'hashed-refresh',
+    );
+    expect(refreshResult.data).toEqual({
+      accessToken: 'access-token-2',
+      refreshToken: 'refresh-token-2',
+    });
+    expect(usersService.setRefreshTokenHash).toHaveBeenNthCalledWith(
+      1,
+      businessAdmin.id,
+      'hashed-refresh',
+    );
+    expect(usersService.setRefreshTokenHash).toHaveBeenNthCalledWith(
+      2,
+      businessAdmin.id,
+      'hashed-refresh',
+    );
+  });
+
+  it.each([
+    { rid: 'other-restaurant', bid: null, claim: 'restaurant' },
+    { rid: null, bid: 'other-branch', claim: 'branch' },
+  ])(
+    'rejects a business admin refresh token with a mismatched non-null $claim claim',
+    async ({ rid, bid }) => {
+      usersService.findById!.mockResolvedValue({
+        id: 'business-admin-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        refreshTokenHash: 'hashed-refresh',
+        authVersion: 4,
+        isActive: true,
+        isGuest: false,
+      });
+      jwtService.verifyAsync.mockResolvedValue({
+        uid: 'business-admin-1',
+        type: 'refresh',
+        actorType: 'USER',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+        tid: 'tenant-1',
+        rid,
+        bid,
+        ver: 4,
+      });
+
+      await expect(
+        service.refreshTokens({ refreshToken: 'refresh-token' }),
+      ).rejects.toThrow('Invalid refresh token');
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps exact restaurant and branch scope matching for non-business users', async () => {
+    usersService.findById!.mockResolvedValue({
+      id: 'branch-admin-1',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      refreshTokenHash: 'hashed-refresh',
+      authVersion: 2,
+      isActive: true,
+      isGuest: false,
+    });
+    jwtService.verifyAsync.mockResolvedValue({
+      uid: 'branch-admin-1',
+      type: 'refresh',
+      actorType: 'USER',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      tid: 'tenant-1',
+      rid: null,
+      bid: null,
+      ver: 2,
+    });
+
+    await expect(
+      service.refreshTokens({ refreshToken: 'refresh-token' }),
+    ).rejects.toThrow('Invalid refresh token');
+    expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
   it('refreshes deliveryman tokens with the deliveryman actor store', async () => {
