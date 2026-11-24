@@ -32,6 +32,8 @@
     "seed:base": "ts-node prisma/seed.ts --mode=base",
     "seed:demo": "ts-node prisma/seed.ts --mode=demo",
     "seed:all": "ts-node prisma/seed.ts --mode=all",
+    "fixture:dev:partner": "ts-node prisma/development-partner-fixture.ts",
+    "test:fixture:partner": "jest --config ./test/jest-partner-fixture.json --runInBand",
     "db:doctor": "bash scripts/db-doctor.sh",
     "db:repair": "bash scripts/db-repair.sh",
     "db:backup": "bash scripts/backup-db.sh",
