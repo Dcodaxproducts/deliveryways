@@ -73,6 +73,7 @@ export const PARTNER_FIXTURE_COUNTS = {
   modifierGroups: 1,
   modifiers: 4,
   customers: 4,
+  profiles: 4,
   addresses: 4,
   coupons: 2,
   orders: 8,
@@ -264,6 +265,18 @@ async function rejectUniqueCollisions(
     prisma.menuItemVariation.count({
       where: {
         id: { in: [...PARTNER_FIXTURE_IDS.variations] },
+        NOT: { restaurantId: target.restaurantId },
+      },
+    }),
+    prisma.modifierCategory.count({
+      where: {
+        id: PARTNER_FIXTURE_IDS.modifierCategory,
+        NOT: { restaurantId: target.restaurantId },
+      },
+    }),
+    prisma.modifierGroup.count({
+      where: {
+        id: PARTNER_FIXTURE_IDS.modifierGroup,
         NOT: { restaurantId: target.restaurantId },
       },
     }),
@@ -1127,8 +1140,12 @@ export async function verifyPartnerFixture(
     categories,
     items,
     variations,
+    modifierCategories,
+    modifierGroups,
     modifiers,
     customers,
+    profiles,
+    addresses,
     orders,
     orderItems,
     payments,
@@ -1161,6 +1178,18 @@ export async function verifyPartnerFixture(
         restaurantId: context.restaurantId,
       },
     }),
+    prisma.modifierCategory.count({
+      where: {
+        id: PARTNER_FIXTURE_IDS.modifierCategory,
+        restaurantId: context.restaurantId,
+      },
+    }),
+    prisma.modifierGroup.count({
+      where: {
+        id: PARTNER_FIXTURE_IDS.modifierGroup,
+        restaurantId: context.restaurantId,
+      },
+    }),
     prisma.modifier.count({
       where: {
         id: { in: [...PARTNER_FIXTURE_IDS.modifiers] },
@@ -1173,6 +1202,19 @@ export async function verifyPartnerFixture(
         tenantId: context.tenantId,
         restaurantId: context.restaurantId,
         role: UserRole.CUSTOMER,
+      },
+    }),
+    prisma.profile.count({
+      where: {
+        id: { in: [...PARTNER_FIXTURE_IDS.profiles] },
+        userId: { in: [...PARTNER_FIXTURE_IDS.customers] },
+      },
+    }),
+    prisma.address.count({
+      where: {
+        id: { in: [...PARTNER_FIXTURE_IDS.addresses] },
+        tenantId: context.tenantId,
+        referenceId: { in: [...PARTNER_FIXTURE_IDS.customers] },
       },
     }),
     prisma.order.count({
@@ -1223,8 +1265,12 @@ export async function verifyPartnerFixture(
     categories,
     items,
     variations,
+    modifierCategories,
+    modifierGroups,
     modifiers,
     customers,
+    profiles,
+    addresses,
     orders,
     orderItems,
     paymentTransactions: payments,
@@ -1238,8 +1284,12 @@ export async function verifyPartnerFixture(
     categories: 3,
     items: 6,
     variations: 2,
+    modifierCategories: 1,
+    modifierGroups: 1,
     modifiers: 4,
     customers: 4,
+    profiles: 4,
+    addresses: 4,
     orders: 8,
     orderItems: 8,
     paymentTransactions: 6,
