@@ -19,6 +19,8 @@ const FEATURE_BY_ROUTE: Array<[string, string]> = [
   ['chat', 'chat'],
 ];
 
+const UNGATED_ROUTE_PREFIXES = ['admin/reports/generated-invoices'] as const;
+
 const EXACT_FEATURE_BY_ROUTE = new Map<string, string>([
   ['admin/reports/financial', 'orderManagement'],
   ['admin/reports/orders', 'orderManagement'],
@@ -41,6 +43,14 @@ type SubscriptionFeatureRequest = {
 
 export const resolveSubscriptionFeature = (path: string) => {
   const normalized = path.replace(/^\/+|\/+$/g, '');
+  if (
+    UNGATED_ROUTE_PREFIXES.some(
+      (route) => normalized === route || normalized.startsWith(`${route}/`),
+    )
+  ) {
+    return undefined;
+  }
+
   const exactFeature = EXACT_FEATURE_BY_ROUTE.get(normalized);
   if (exactFeature) return exactFeature;
 

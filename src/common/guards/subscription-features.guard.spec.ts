@@ -110,6 +110,14 @@ describe('SubscriptionFeaturesGuard', () => {
     expect(resolveSubscriptionFeature('admin/reports/orders/export')).toBe(
       'customerAnalytics',
     );
+    expect(
+      resolveSubscriptionFeature('admin/reports/generated-invoices'),
+    ).toBeUndefined();
+    expect(
+      resolveSubscriptionFeature(
+        'admin/reports/generated-invoices/invoice-1/pdf',
+      ),
+    ).toBeUndefined();
   });
 
   it('allows table reservations only when the eligible plan does not disable table booking', async () => {
