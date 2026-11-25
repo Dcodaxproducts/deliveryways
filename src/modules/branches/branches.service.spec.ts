@@ -802,6 +802,64 @@ describe('BranchesService', () => {
     expect(result.message).toBe('Branch updated successfully');
   });
 
+  it('updates the branch-linked admin and keeps password when managerId is absent', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.findById.mockResolvedValue({
+      id: 'branch-1',
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      managerId: null,
+      manager: null,
+      users: [
+        {
+          id: 'branch-admin-1',
+          email: 'old@example.com',
+          profile: { firstName: 'Old', lastName: 'Name', phone: '100' },
+        },
+      ],
+      isActive: true,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+    usersService.findByEmail.mockResolvedValue(null);
+    usersService.update.mockResolvedValue({ id: 'branch-admin-1' });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      },
+      'branch-1',
+      {
+        branchAdmin: {
+          firstName: 'Rames',
+          lastName: 'Kanth',
+          email: 'rames@example.com',
+          phone: '01762419181',
+          password: '',
+        },
+      },
+    );
+
+    expect(usersService.update).toHaveBeenCalledWith(
+      'branch-admin-1',
+      {
+        email: 'rames@example.com',
+        password: undefined,
+        profile: {
+          firstName: 'Rames',
+          lastName: 'Kanth',
+          phone: '01762419181',
+        },
+      },
+      expect.any(Object),
+    );
+  });
+
   it('allows business admin to update branch details when branch admin payload is present but no manager is assigned', async () => {
     const { service, repository, usersService, prisma } = makeService();
     repository.findById.mockResolvedValue({

@@ -643,6 +643,53 @@ describe('AuthService listCustomers and customerDetails', () => {
     );
   });
 
+  it('applies branch scope and deleted/filter semantics to rows and totals', async () => {
+    usersService.listCustomers!.mockResolvedValue({ items: [], total: 11 });
+
+    const result = await service.listCustomers(
+      {
+        uid: 'branch-admin-1',
+        tid: 'tenant-1',
+        rid: 'restaurant-1',
+        bid: 'branch-1',
+        role: UserRoleEnum.BRANCH_ADMIN,
+      },
+      {
+        page: 2,
+        limit: 5,
+        isGuest: false,
+        isActive: true,
+        isVerified: true,
+        withDeleted: true,
+        fromDate: '2026-09-01',
+        toDate: '2026-11-10',
+        sortBy: 'createdAt',
+        sortOrder: 'ASC',
+      },
+    );
+
+    expect(usersService.listCustomers).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isGuest: false,
+        isActive: true,
+        isVerified: true,
+        withDeleted: true,
+      }),
+      true,
+    );
+    expect(result.meta).toMatchObject({
+      page: 2,
+      limit: 5,
+      total: 11,
+      totalPages: 3,
+      hasNext: true,
+      hasPrevious: true,
+    });
+  });
+
   it('allows super admin to fetch a customer by id', async () => {
     usersService.findCustomerById!.mockResolvedValue({ id: 'customer-1' });
 

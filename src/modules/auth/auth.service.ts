@@ -767,10 +767,14 @@ export class AuthService {
       }
 
       scopedQuery.restaurantId = user.rid;
+      const branchId = user.bid ?? user.branchId;
+      if (!branchId) {
+        throw new ForbiddenException('Branch context is required');
+      }
+      scopedQuery.branchId = branchId;
     }
 
-    const allowWithDeleted =
-      user.role === UserRoleEnum.SUPER_ADMIN && !!scopedQuery.withDeleted;
+    const allowWithDeleted = Boolean(scopedQuery.withDeleted);
     const tenantId =
       user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid;
     const { items, total } = await this.usersService.listCustomers(

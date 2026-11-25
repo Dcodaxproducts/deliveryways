@@ -173,6 +173,56 @@ describe('CustomerAppRepository', () => {
     jest.useRealTimers();
   });
 
+  it('applies schedule eligibility before cuisine detail pagination and count', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-16T00:30:00.000Z'));
+    const findMany = jest
+      .fn<ReturnType<FindManyMenuItems>, Parameters<FindManyMenuItems>>()
+      .mockResolvedValue([{ id: 'item-1' }]);
+    const count = jest
+      .fn<ReturnType<CountMenuItems>, Parameters<CountMenuItems>>()
+      .mockResolvedValue(11);
+    const findMenus = jest.fn().mockResolvedValue([
+      {
+        id: 'overnight-menu',
+        isTimed: true,
+        timingConfig: {
+          timezone: 'UTC',
+          windows: [{ day: 'SUNDAY', start: '23:00', end: '01:00' }],
+        },
+      },
+    ]);
+    const repository = new CustomerAppRepository({
+      restaurantMenu: { findMany: findMenus },
+      menuItem: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    } as unknown as PrismaService);
+
+    const result = await repository.listCuisineMenuItems('cuisine-1', {
+      restaurantId: 'restaurant-1',
+      branchId: 'branch-1',
+      page: 2,
+      limit: 5,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    const itemQuery = findMany.mock.calls[0]?.[0] as {
+      where: unknown;
+      skip: number;
+      take: number;
+    };
+    expect(itemQuery).toMatchObject({ skip: 5, take: 5 });
+    expect(JSON.stringify(itemQuery.where)).toContain('overnight-menu');
+    expect(count).toHaveBeenCalledWith({ where: itemQuery.where });
+    expect(result.total).toBe(11);
+    expect(findMenus).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 501 }),
+    );
+    jest.useRealTimers();
+  });
+
   it('fails closed on a per-cuisine category overflow and keeps scope in the detail query', async () => {
     const findMany = jest
       .fn<ReturnType<FindManyCuisines>, Parameters<FindManyCuisines>>()

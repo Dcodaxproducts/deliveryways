@@ -350,6 +350,24 @@ export class CustomerAppService {
       branches: Array<{ id: string; name: string }>;
     };
     const defaultBranch = restaurantContext.branches[0] ?? null;
+    const faviconUrl = await this.storageService.resolveTrustedPublicViewUrl(
+      getBrandingFaviconUrl(restaurant.branding),
+      restaurant.tenantId,
+      restaurant.id,
+    );
+    const branding = this.asObject(restaurant.branding);
+    const brandingAssets = this.asObject(branding.assets);
+    const brandingLogos = this.asObject(brandingAssets.logos);
+    const projectedBranding = faviconUrl
+      ? {
+          ...branding,
+          assets: {
+            ...brandingAssets,
+            faviconUrl,
+            logos: { ...brandingLogos, faviconUrl },
+          },
+        }
+      : branding;
 
     return {
       data: {
@@ -365,16 +383,12 @@ export class CustomerAppService {
         customDomain: restaurant.customDomain,
         customDomainVerified: Boolean(restaurant.customDomainVerifiedAt),
         logoUrl: await this.resolveMediaUrl(restaurant.logoUrl),
-        branding: restaurant.branding,
+        branding: projectedBranding,
         brandingVersion: createBrandingVersion(
           restaurant.id,
           restaurant.branding,
         ),
-        faviconUrl: await this.storageService.resolveTrustedPublicViewUrl(
-          getBrandingFaviconUrl(restaurant.branding),
-          restaurant.tenantId,
-          restaurant.id,
-        ),
+        faviconUrl,
       },
       message: 'Domain context resolved successfully',
     };
@@ -863,11 +877,7 @@ export class CustomerAppService {
         cuisineId,
         resolvedQuery,
       );
-    const visibleItems = items.filter((item) =>
-      this.isMenuItemAvailableForCurrentSchedule(
-        item as PublicMenuItemScheduleCarrier,
-      ),
-    );
+    const visibleItems = items;
     const promotionContext = await this.loadPromotionContext(
       resolvedQuery.restaurantId,
       resolvedQuery.branchId,
@@ -906,7 +916,7 @@ export class CustomerAppService {
         ),
       },
       message: 'Cuisine items fetched successfully',
-      meta: buildPaginationMeta(query, Math.min(total, visibleItems.length)),
+      meta: buildPaginationMeta(query, total),
     };
   }
 

@@ -92,6 +92,15 @@ interface BranchAdminUpdateTarget {
       phone: string | null;
     } | null;
   } | null;
+  users?: Array<{
+    id: string;
+    email: string;
+    profile?: {
+      firstName: string | null;
+      lastName: string | null;
+      phone: string | null;
+    } | null;
+  }>;
 }
 
 const BRANCH_OPENING_DAY_ORDER: BranchScheduleDayEnum[] = [
@@ -1849,14 +1858,15 @@ export class BranchesService {
       return;
     }
 
-    const managerId = branch.manager?.id ?? branch.managerId;
+    const assignedAdmin = branch.manager ?? branch.users?.[0] ?? null;
+    const managerId = assignedAdmin?.id ?? branch.managerId;
     if (!managerId) {
       return;
     }
 
     const email = branchAdmin.email?.trim().toLowerCase();
 
-    if (email && email !== branch.manager?.email) {
+    if (email && email !== assignedAdmin?.email) {
       const existingBranchAdmin = await this.usersService.findByEmail(
         email,
         branch.restaurantId,
@@ -1880,11 +1890,11 @@ export class BranchesService {
           ? {
               firstName:
                 branchAdmin.firstName ??
-                branch.manager?.profile?.firstName ??
+                assignedAdmin?.profile?.firstName ??
                 '',
               lastName:
-                branchAdmin.lastName ?? branch.manager?.profile?.lastName ?? '',
-              phone: branchAdmin.phone ?? branch.manager?.profile?.phone ?? '',
+                branchAdmin.lastName ?? assignedAdmin?.profile?.lastName ?? '',
+              phone: branchAdmin.phone ?? assignedAdmin?.profile?.phone ?? '',
             }
           : undefined,
       },

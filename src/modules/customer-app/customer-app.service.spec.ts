@@ -363,6 +363,16 @@ describe('CustomerAppService', () => {
       branchId: 'branch-1',
       faviconUrl:
         'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
+      branding: {
+        assets: {
+          faviconUrl:
+            'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
+          logos: {
+            faviconUrl:
+              'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
+          },
+        },
+      },
     });
     expect(storageService.resolveTrustedPublicViewUrl).toHaveBeenCalledWith(
       'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.webp',
@@ -2268,7 +2278,7 @@ describe('CustomerAppService', () => {
     expect(translatedItem.category?.name).toBe('Kategorie DE');
   });
 
-  it('hides cuisine items when their timed menu is not currently active', async () => {
+  it('preserves schedule-filtered cuisine detail totals and pagination', async () => {
     const { service, repository } = makeService();
     repository.findRestaurantPublicContent.mockResolvedValue({
       id: 'restaurant-1',
@@ -2289,26 +2299,8 @@ describe('CustomerAppService', () => {
       imageUrl: 'https://cdn.example.com/category.png',
     });
     repository.listCuisineMenuItems.mockResolvedValue({
-      items: [
-        itemFixture,
-        {
-          ...itemFixture,
-          id: 'item-closed',
-          slug: 'closed-item',
-          menuLinks: [
-            {
-              isActive: true,
-              restaurantMenu: {
-                isActive: true,
-                deletedAt: null,
-                isTimed: true,
-                timingConfig: { timezone: 'UTC', windows: [] },
-              },
-            },
-          ],
-        },
-      ],
-      total: 2,
+      items: [itemFixture],
+      total: 11,
     });
 
     const result = await service.listCuisineItems('category-1', {
@@ -2321,6 +2313,7 @@ describe('CustomerAppService', () => {
 
     expect(result.data.items).toHaveLength(1);
     expect(result.data.items[0].id).toBe('item-1');
+    expect(result.meta).toMatchObject({ total: 11, totalPages: 2 });
   });
 
   it('returns slim cuisine cards with schedule-aware item counts', async () => {
