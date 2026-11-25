@@ -3,6 +3,7 @@ import {
   CouponCampaignKind,
   CouponDiscountType,
   GeneratedInvoiceEventType,
+  GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
   PaymentMethod,
   PaymentStatus,
@@ -401,6 +402,53 @@ export class AdminReportsRepository {
     query: AdminGeneratedInvoicesQueryDto,
     boundaries: GeneratedInvoiceListBoundaries = {},
   ) {
+    const selectedKinds = query.kinds?.length
+      ? query.kinds
+      : query.kind
+        ? [query.kind]
+        : undefined;
+    const includesPayoutInvoices = selectedKinds
+      ? selectedKinds.includes(GeneratedInvoiceKind.WEEKLY_PAYOUT)
+      : query.excludeKind !== GeneratedInvoiceKind.WEEKLY_PAYOUT;
+    const includesOtherInvoices = selectedKinds
+      ? selectedKinds.some(
+          (kind) => kind !== GeneratedInvoiceKind.WEEKLY_PAYOUT,
+        )
+      : true;
+    const createdAtBounds: Prisma.DateTimeFilter = {
+      ...(boundaries.from ? { gte: boundaries.from } : {}),
+      ...(boundaries.toExclusive ? { lt: boundaries.toExclusive } : {}),
+    };
+    const payoutPeriodBounds: Prisma.GeneratedInvoiceWhereInput = {
+      ...(boundaries.from ? { periodTo: { gt: boundaries.from } } : {}),
+      ...(boundaries.toExclusive
+        ? { periodFrom: { lt: boundaries.toExclusive } }
+        : {}),
+    };
+    const dateFilter: Prisma.GeneratedInvoiceWhereInput =
+      boundaries.from || boundaries.toExclusive
+        ? includesPayoutInvoices && includesOtherInvoices
+          ? {
+              AND: [
+                {
+                  OR: [
+                    {
+                      kind: GeneratedInvoiceKind.WEEKLY_PAYOUT,
+                      ...payoutPeriodBounds,
+                    },
+                    {
+                      kind: { not: GeneratedInvoiceKind.WEEKLY_PAYOUT },
+                      createdAt: createdAtBounds,
+                    },
+                  ],
+                },
+              ],
+            }
+          : includesPayoutInvoices
+            ? payoutPeriodBounds
+            : { createdAt: createdAtBounds }
+        : {};
+
     return this.prisma.generatedInvoice.findMany({
       where: {
         ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
@@ -420,16 +468,7 @@ export class AdminReportsRepository {
           ? { subscriptionId: query.subscriptionId }
           : {}),
         ...(query.orderId ? { orderId: query.orderId } : {}),
-        ...(boundaries.from || boundaries.toExclusive
-          ? {
-              createdAt: {
-                ...(boundaries.from ? { gte: boundaries.from } : {}),
-                ...(boundaries.toExclusive
-                  ? { lt: boundaries.toExclusive }
-                  : {}),
-              },
-            }
-          : {}),
+        ...dateFilter,
       },
       ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       take: (query.limit ?? 50) + 1,

@@ -166,6 +166,62 @@ describe('AdminReportsService', () => {
     );
   });
 
+  it('uses the Business Admin selected American Corner scope across report endpoints', async () => {
+    const repository = {
+      findRestaurantScope: jest.fn((restaurantId: string, tenantId: string) =>
+        Promise.resolve(
+          restaurantId === 'american-corner' && tenantId === 'tenant-1'
+            ? { id: restaurantId, tenantId }
+            : null,
+        ),
+      ),
+      getFinancialReport: jest.fn().mockResolvedValue({ totalOrders: 4 }),
+      getOrdersReport: jest.fn().mockResolvedValue({ totalOrders: 4 }),
+      listGeneratedInvoices: jest.fn().mockResolvedValue([]),
+    };
+    const service = new AdminReportsService(repository as never);
+    const user = {
+      uid: 'owner-1',
+      tid: 'tenant-1',
+      rid: 'previously-selected-shop',
+      role: 'BUSINESS_ADMIN',
+    } as never;
+
+    await service.getFinancialReport(user, {
+      restaurantId: 'american-corner',
+      fromDate: '2026-11-09',
+      toDate: '2026-11-15',
+    });
+    await service.getOrdersReport(user, {
+      restaurantId: 'american-corner',
+    });
+    await service.listGeneratedInvoices(user, {
+      restaurantId: 'american-corner',
+      kind: 'WEEKLY_PAYOUT',
+    } as never);
+
+    const expectedScope = {
+      tenantId: 'tenant-1',
+      restaurantId: 'american-corner',
+    };
+    expect(repository.findRestaurantScope).toHaveBeenCalledTimes(3);
+    expect(repository.getFinancialReport).toHaveBeenCalledWith(
+      expectedScope,
+      expect.objectContaining({ restaurantId: 'american-corner' }),
+    );
+    expect(repository.getOrdersReport).toHaveBeenCalledWith(
+      expectedScope,
+      expect.objectContaining({ restaurantId: 'american-corner' }),
+    );
+    expect(repository.listGeneratedInvoices).toHaveBeenCalledWith(
+      expectedScope,
+      expect.objectContaining({
+        restaurantId: 'american-corner',
+        kind: 'WEEKLY_PAYOUT',
+      }),
+    );
+  });
+
   it('keeps selected-period financial reports tenant and branch scoped', async () => {
     const repository = {
       findRestaurantScope: jest.fn().mockResolvedValue(null),

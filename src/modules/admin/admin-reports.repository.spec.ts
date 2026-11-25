@@ -575,10 +575,24 @@ describe('AdminReportsRepository', () => {
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
         kind: { in: ['SUBSCRIPTION', 'WEEKLY_PAYOUT'] },
-        createdAt: {
-          gte: new Date('2026-03-28T23:00:00.000Z'),
-          lt: new Date('2026-03-29T22:00:00.000Z'),
-        },
+        AND: [
+          {
+            OR: [
+              {
+                kind: 'WEEKLY_PAYOUT',
+                periodTo: { gt: new Date('2026-03-28T23:00:00.000Z') },
+                periodFrom: { lt: new Date('2026-03-29T22:00:00.000Z') },
+              },
+              {
+                kind: { not: 'WEEKLY_PAYOUT' },
+                createdAt: {
+                  gte: new Date('2026-03-28T23:00:00.000Z'),
+                  lt: new Date('2026-03-29T22:00:00.000Z'),
+                },
+              },
+            ],
+          },
+        ],
       },
       cursor: { id: 'invoice-cursor' },
       skip: 1,
@@ -586,5 +600,60 @@ describe('AdminReportsRepository', () => {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     expect(orderFindMany).not.toHaveBeenCalled();
+  });
+
+  it('finds a later-generated weekly payout by its inclusive local payout period', async () => {
+    const payoutInvoice = {
+      id: 'payout-1',
+      kind: 'WEEKLY_PAYOUT',
+      periodFrom: new Date('2026-11-08T23:00:00.000Z'),
+      periodTo: new Date('2026-11-15T23:00:00.000Z'),
+      createdAt: new Date('2026-11-20T10:00:00.000Z'),
+    };
+    const findMany = jest
+      .fn()
+      .mockImplementation(({ where }: { where: Record<string, unknown> }) => {
+        const periodFrom = where.periodFrom as { lt: Date };
+        const periodTo = where.periodTo as { gt: Date };
+        return Promise.resolve(
+          payoutInvoice.periodFrom < periodFrom.lt &&
+            payoutInvoice.periodTo > periodTo.gt
+            ? [payoutInvoice]
+            : [],
+        );
+      });
+    const repository = new AdminReportsRepository({
+      generatedInvoice: { findMany },
+    } as never);
+
+    const result = await repository.listGeneratedInvoices(
+      { tenantId: 'tenant-1', restaurantId: 'restaurant-1' },
+      { kind: 'WEEKLY_PAYOUT', limit: 50 } as never,
+      {
+        from: new Date('2026-11-08T23:00:00.000Z'),
+        toExclusive: new Date('2026-11-15T23:00:00.000Z'),
+      },
+    );
+
+    expect(result).toEqual([payoutInvoice]);
+    type WeeklyPayoutInvoiceQuery = {
+      where: Record<string, unknown>;
+      take: number;
+      orderBy: Array<Record<string, string>>;
+    };
+    const calls = findMany.mock.calls as unknown as Array<
+      [WeeklyPayoutInvoiceQuery]
+    >;
+    expect(calls[0][0]).toMatchObject({
+      where: {
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        kind: 'WEEKLY_PAYOUT',
+        periodFrom: { lt: new Date('2026-11-15T23:00:00.000Z') },
+        periodTo: { gt: new Date('2026-11-08T23:00:00.000Z') },
+      },
+      take: 51,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
   });
 });
