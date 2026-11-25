@@ -15,6 +15,7 @@ import {
   SubscriptionDeductionStatus,
   SubscriptionDeductionType,
   SubscriptionStatus,
+  UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { SUCCESSFUL_ORDER_STATUSES } from '../../common/utils/successful-order-statuses';
@@ -612,6 +613,18 @@ export class PackagePlansRepository {
             isMain: true,
             settings: true,
             manager: {
+              select: {
+                profile: { select: { firstName: true, lastName: true } },
+              },
+            },
+            users: {
+              where: {
+                role: UserRole.BRANCH_ADMIN,
+                isActive: true,
+                deletedAt: null,
+              },
+              orderBy: { createdAt: 'asc' },
+              take: 1,
               select: {
                 profile: { select: { firstName: true, lastName: true } },
               },

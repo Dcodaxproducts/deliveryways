@@ -4045,6 +4045,10 @@ export class PackagePlansService {
             `Restaurant: ${invoice.restaurant.name}`,
             `Tenant: ${invoice.tenant.name}`,
             `Email: ${invoice.restaurant.billingEmail ?? 'N/A'}`,
+            `Branch Owner: ${
+              invoice.lineItems.find((item) => item.branch?.ownerName)?.branch
+                ?.ownerName ?? 'N/A'
+            }`,
             `Address: ${invoice.restaurant.address ?? 'N/A'}`,
             `Tax ID: ${invoice.restaurant.taxNumber ?? 'N/A'}`,
           ],
@@ -4113,12 +4117,10 @@ export class PackagePlansService {
           tables: [
             {
               columns: [
-                { header: 'Month', width: 70 },
-                { header: 'Commission This Payout', width: 115 },
-                { header: 'Commission Month Total', width: 115 },
-                { header: 'Commission Cap Left', width: 100 },
-                { header: 'Monthly Fee Deducted', width: 110 },
-                { header: 'Monthly Fee Outstanding', width: 115 },
+                { header: 'Month', width: 60 },
+                { header: 'Commission This Payout', width: 150 },
+                { header: 'Commission Month Total', width: 150 },
+                { header: 'Commission Cap Left', width: 139 },
               ],
               rows: invoice.monthlyBilling.months.map((month) => [
                 String(month.month),
@@ -4133,6 +4135,16 @@ export class PackagePlansService {
                   : this.formatInvoiceMoney(
                       Number(month.commissionCapRemaining),
                     ),
+              ]),
+            },
+            {
+              columns: [
+                { header: 'Month', width: 60 },
+                { header: 'Monthly Fee Deducted', width: 210 },
+                { header: 'Monthly Fee Outstanding', width: 229 },
+              ],
+              rows: invoice.monthlyBilling.months.map((month) => [
+                String(month.month),
                 this.formatInvoiceMoney(
                   Number(month.monthlyFeeDeductedThisMonth),
                 ),
@@ -4755,8 +4767,26 @@ export class PackagePlansService {
     return parts.join(', ') || landing?.address?.trim() || null;
   }
 
-  private resolveBranchOwnerName(branch: RestaurantPayoutOrder['branch']) {
-    const profile = branch?.manager?.profile;
+  private resolveBranchOwnerName(
+    branch:
+      | {
+          manager?: {
+            profile?: {
+              firstName?: string | null;
+              lastName?: string | null;
+            } | null;
+          } | null;
+          users?: Array<{
+            profile?: {
+              firstName?: string | null;
+              lastName?: string | null;
+            } | null;
+          }>;
+        }
+      | null
+      | undefined,
+  ) {
+    const profile = branch?.manager?.profile ?? branch?.users?.[0]?.profile;
     const name = [profile?.firstName, profile?.lastName]
       .map((part) => part?.trim())
       .filter(Boolean)
@@ -4773,11 +4803,21 @@ export class PackagePlansService {
         ['address'],
       ]),
     );
-    const street = [address.street, address.shopNumber]
+    const street = [
+      address.street,
+      address.shopNumber ?? address.houseNumber ?? address.house_number,
+    ]
       .map((value) => this.readStringValue(value))
       .filter(Boolean)
       .join(' ');
-    const city = [address.postalCode, address.city]
+    const city = [
+      address.postalCode ??
+        address.zipCode ??
+        address.zip_code ??
+        address.postcode ??
+        address.postal_code,
+      address.city,
+    ]
       .map((value) => this.readStringValue(value))
       .filter(Boolean)
       .join(' ');

@@ -2019,14 +2019,13 @@ describe('PackagePlansService', () => {
             address: {
               street: 'Katernberger Str.',
               shopNumber: '7-9',
-              postalCode: '45327',
+              zipCode: '45327',
               city: 'Essen',
               country: 'Deutschland',
             },
           },
-          manager: {
-            profile: { firstName: 'Mina', lastName: 'Owner' },
-          },
+          manager: null,
+          users: [{ profile: { firstName: 'Mina', lastName: 'Owner' } }],
         },
       ],
     });
