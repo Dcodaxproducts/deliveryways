@@ -425,6 +425,13 @@ export class AdminReportsService {
     const limit = query.limit ?? 50;
     const hasMore = invoicesPlusOne.length > limit;
     const invoices = invoicesPlusOne.slice(0, limit);
+    const restaurantIds = [
+      ...new Set(
+        invoices
+          .map((invoice) => invoice.restaurantId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
     const branchIds = [
       ...new Set(
         invoices
@@ -432,22 +439,67 @@ export class AdminReportsService {
           .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const branches = branchIds.length
-      ? await this.adminReportsRepository.listGeneratedInvoiceBranches(
+    const [restaurants, branches] = await Promise.all([
+      restaurantIds.length
+        ? this.adminReportsRepository.listGeneratedInvoiceRestaurants(
+            scope,
+            restaurantIds,
+          )
+        : [],
+      branchIds.length
+        ? this.adminReportsRepository.listGeneratedInvoiceBranches(
+            scope,
+            branchIds,
+          )
+        : [],
+    ]);
+    const restaurantNames = new Map(
+      restaurants.map(
+        (restaurant) => [restaurant.id, restaurant.name] as const,
+      ),
+    );
+    const tenantNames = new Map(
+      restaurants.map(
+        (restaurant) => [restaurant.tenant.id, restaurant.tenant.name] as const,
+      ),
+    );
+    const unresolvedTenantIds = [
+      ...new Set(
+        invoices
+          .map((invoice) => invoice.tenantId)
+          .filter(
+            (id): id is string =>
+              typeof id === 'string' && !tenantNames.has(id),
+          ),
+      ),
+    ];
+    if (unresolvedTenantIds.length) {
+      const tenants =
+        await this.adminReportsRepository.listGeneratedInvoiceTenants(
           scope,
-          branchIds,
-        )
-      : [];
+          unresolvedTenantIds,
+        );
+      for (const tenant of tenants) {
+        tenantNames.set(tenant.id, tenant.name);
+      }
+    }
     const branchNames = new Map(
       branches.map((branch) => [branch.id, branch.name] as const),
     );
 
     return {
       data: invoices.map((invoice) =>
-        this.toGeneratedInvoiceSummary(
-          invoice,
-          invoice.branchId ? branchNames.get(invoice.branchId) : undefined,
-        ),
+        this.toGeneratedInvoiceSummary(invoice, {
+          restaurantName: invoice.restaurantId
+            ? restaurantNames.get(invoice.restaurantId)
+            : undefined,
+          branchName: invoice.branchId
+            ? branchNames.get(invoice.branchId)
+            : undefined,
+          tenantName: invoice.tenantId
+            ? tenantNames.get(invoice.tenantId)
+            : undefined,
+        }),
       ),
       meta: {
         nextCursor: hasMore ? (invoices.at(-1)?.id ?? null) : null,
@@ -1241,12 +1293,34 @@ export class AdminReportsService {
     invoice: Awaited<
       ReturnType<AdminReportsRepository['listGeneratedInvoices']>
     >[number],
-    branchName?: string,
+    names: {
+      restaurantName?: string;
+      branchName?: string;
+      tenantName?: string;
+    } = {},
   ) {
-    const snapshot = this.asObject(invoice.snapshot);
-    const restaurant = this.asObject(snapshot.restaurant);
-    const branchSnapshot = this.asObject(snapshot.branch);
-    const tenant = this.asObject(snapshot.tenant);
+    const invoiceWithSnapshot = invoice as typeof invoice & {
+      snapshot?: unknown;
+    };
+    const snapshot = this.asObject(invoiceWithSnapshot.snapshot);
+    const snapshotRestaurant = this.asObject(snapshot.restaurant);
+    const snapshotBranch = this.asObject(snapshot.branch);
+    const snapshotTenant = this.asObject(snapshot.tenant);
+    const restaurantName =
+      names.restaurantName ??
+      (typeof snapshotRestaurant.name === 'string'
+        ? snapshotRestaurant.name
+        : undefined);
+    const branchName =
+      names.branchName ??
+      (typeof snapshotBranch.name === 'string'
+        ? snapshotBranch.name
+        : undefined);
+    const tenantName =
+      names.tenantName ??
+      (typeof snapshotTenant.name === 'string'
+        ? snapshotTenant.name
+        : undefined);
 
     return {
       id: invoice.id,
@@ -1272,24 +1346,22 @@ export class AdminReportsService {
       documentType:
         typeof snapshot.documentType === 'string'
           ? snapshot.documentType
-          : null,
+          : invoice.invoiceNumber.startsWith('CRN-')
+            ? 'CREDIT_NOTE'
+            : 'INVOICE',
       restaurant:
-        invoice.restaurantId && typeof restaurant.name === 'string'
-          ? { id: invoice.restaurantId, name: restaurant.name }
+        invoice.restaurantId && restaurantName
+          ? { id: invoice.restaurantId, name: restaurantName }
           : null,
       branch: invoice.branchId
         ? {
             id: invoice.branchId,
-            name:
-              branchName ??
-              (typeof branchSnapshot.name === 'string'
-                ? branchSnapshot.name
-                : 'Unknown branch'),
+            name: branchName ?? 'Unknown branch',
           }
         : null,
       tenant:
-        invoice.tenantId && typeof tenant.name === 'string'
-          ? { id: invoice.tenantId, name: tenant.name }
+        invoice.tenantId && tenantName
+          ? { id: invoice.tenantId, name: tenantName }
           : null,
     };
   }

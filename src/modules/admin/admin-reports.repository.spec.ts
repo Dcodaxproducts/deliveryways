@@ -23,7 +23,12 @@ describe('AdminReportsRepository', () => {
     );
 
     const findManyCalls = findMany.mock.calls as unknown as Array<
-      [{ where: Record<string, unknown> }]
+      [
+        {
+          where: Record<string, unknown>;
+          select: Record<string, unknown>;
+        },
+      ]
     >;
     const findManyCall = findManyCalls[0][0];
     expect(findManyCall.where).toMatchObject({
@@ -32,6 +37,7 @@ describe('AdminReportsRepository', () => {
       OR: [{ branchId: 'branch-1' }, { branchId: null }],
       kind: 'SUBSCRIPTION',
     });
+    expect(findManyCall.select).not.toHaveProperty('snapshot');
   });
 
   it('allows an authorized branch to view a restaurant-level billing PDF', async () => {
@@ -57,6 +63,10 @@ describe('AdminReportsRepository', () => {
         OR: [{ branchId: 'branch-1' }, { branchId: null }],
       },
     });
+    const findFirstCalls = findFirst.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    expect(findFirstCalls[0][0]).not.toHaveProperty('select');
   });
 
   it('applies excluded status and schedule dates to order report aggregation', async () => {
