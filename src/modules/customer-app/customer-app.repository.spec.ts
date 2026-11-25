@@ -212,8 +212,22 @@ describe('CustomerAppRepository', () => {
       where: unknown;
       skip: number;
       take: number;
+      include: Record<string, unknown>;
     };
     expect(itemQuery).toMatchObject({ skip: 5, take: 5 });
+    expect(Object.keys(itemQuery.include).sort()).toEqual([
+      '_count',
+      'branchOverrides',
+      'category',
+      'categoryLinks',
+      'menuLinks',
+      'restaurant',
+      'variationPriceOverrides',
+    ]);
+    expect(JSON.stringify(itemQuery.include).length).toBeLessThan(15_000);
+    expect(JSON.stringify(itemQuery.include)).not.toContain(
+      '"modifierLinks":{"include"',
+    );
     expect(JSON.stringify(itemQuery.where)).toContain('overnight-menu');
     expect(count).toHaveBeenCalledWith({ where: itemQuery.where });
     expect(result.total).toBe(11);

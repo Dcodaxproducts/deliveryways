@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 import {
   ArrayMinSize,
   IsDateString,
@@ -33,6 +33,18 @@ import {
 } from '@prisma/client';
 import { OrderTypeEnum } from '../../common/enums';
 
+const transformQueryBoolean = ({ value, obj, key }: TransformFnParams) => {
+  const source = obj as unknown;
+  const rawValue: unknown =
+    source && typeof source === 'object'
+      ? (source as Record<string, unknown>)[key]
+      : (value as unknown);
+
+  if (rawValue === true || rawValue === 'true') return true;
+  if (rawValue === false || rawValue === 'false') return false;
+  return rawValue;
+};
+
 export class AdminListCustomersDto extends AdminListQueryDto {
   @ApiPropertyOptional({
     description: 'Filter customers by assigned/order branch',
@@ -50,19 +62,19 @@ export class AdminListCustomersDto extends AdminListQueryDto {
     description: 'Filter registered or guest customer accounts',
   })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
+  @Transform(transformQueryBoolean)
   @IsBoolean()
   isGuest?: boolean;
 
   @ApiPropertyOptional({ description: 'Filter by account verification state' })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
+  @Transform(transformQueryBoolean)
   @IsBoolean()
   isVerified?: boolean;
 
   @ApiPropertyOptional({ description: 'Filter by active account state' })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
+  @Transform(transformQueryBoolean)
   @IsBoolean()
   isActive?: boolean;
 

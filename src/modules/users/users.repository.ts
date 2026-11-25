@@ -110,11 +110,26 @@ export class UsersRepository {
     },
     withDeleted = false,
   ) {
+    const guestOrderOrPosIdentity: Prisma.UserWhereInput = {
+      OR: [{ branchId: { not: null } }, { customerOrders: { some: {} } }],
+    };
+    const guestIdentityWhere: Prisma.UserWhereInput =
+      query.isGuest === false
+        ? { isGuest: false }
+        : query.isGuest === true
+          ? { isGuest: true, AND: [guestOrderOrPosIdentity] }
+          : {
+              OR: [
+                { isGuest: false },
+                { isGuest: true, AND: [guestOrderOrPosIdentity] },
+              ],
+            };
     const where: Prisma.UserWhereInput = {
       ...(tenantId ? { tenantId } : {}),
       role: UserRole.CUSTOMER,
       ...(query.restaurantId ? { restaurantId: query.restaurantId } : {}),
       AND: [
+        guestIdentityWhere,
         ...(query.branchId
           ? [
               {
@@ -125,23 +140,11 @@ export class UsersRepository {
               },
             ]
           : []),
-        ...(query.isGuest === undefined
-          ? [
-              {
-                OR: [
-                  { isGuest: false },
-                  { isGuest: true, customerOrders: { some: {} } },
-                ],
-              },
-            ]
-          : []),
       ],
       ...(query.isVerified !== undefined
         ? { isVerified: query.isVerified }
         : {}),
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
-      ...(query.isGuest !== undefined ? { isGuest: query.isGuest } : {}),
-      ...(query.isGuest === true ? { customerOrders: { some: {} } } : {}),
       ...(query.fromDate || query.toDate
         ? {
             createdAt: {

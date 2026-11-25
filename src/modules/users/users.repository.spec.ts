@@ -52,6 +52,7 @@ describe('UsersRepository', () => {
     type FindManyArgs = {
       where: {
         isGuest?: boolean;
+        AND?: unknown[];
       };
     };
     const findMany = jest.fn((args: FindManyArgs): Promise<unknown[]> => {
@@ -75,7 +76,9 @@ describe('UsersRepository', () => {
       isGuest: false,
     });
 
-    expect(findMany.mock.calls[0]?.[0].where.isGuest).toBe(false);
+    expect(findMany.mock.calls[0]?.[0].where.AND).toContainEqual({
+      isGuest: false,
+    });
   });
 
   it('excludes orderless guest profiles from both rows and count', async () => {
@@ -107,16 +110,70 @@ describe('UsersRepository', () => {
       sortOrder: 'DESC',
     });
 
-    const expectedEligibility = [
-      {
-        OR: [
-          { isGuest: false },
-          { isGuest: true, customerOrders: { some: {} } },
-        ],
-      },
-    ];
-    expect(findMany.mock.calls[0]?.[0].where.AND).toEqual(expectedEligibility);
-    expect(count.mock.calls[0]?.[0].where.AND).toEqual(expectedEligibility);
+    const expectedEligibility = {
+      OR: [
+        { isGuest: false },
+        {
+          isGuest: true,
+          AND: [
+            {
+              OR: [
+                { branchId: { not: null } },
+                { customerOrders: { some: {} } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(findMany.mock.calls[0]?.[0].where.AND).toContainEqual(
+      expectedEligibility,
+    );
+    expect(count.mock.calls[0]?.[0].where.AND).toContainEqual(
+      expectedEligibility,
+    );
+  });
+
+  it('includes POS walk-in guest identities before their first order', async () => {
+    type QueryArgs = { where: Record<string, unknown> };
+    const findMany = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve([]);
+    });
+    const count = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(0);
+    });
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      isGuest: true,
+    });
+
+    const expectedGuestIdentity = {
+      isGuest: true,
+      AND: [
+        {
+          OR: [{ branchId: { not: null } }, { customerOrders: { some: {} } }],
+        },
+      ],
+    };
+    expect(findMany.mock.calls[0]?.[0].where.AND).toContainEqual(
+      expectedGuestIdentity,
+    );
+    expect(count.mock.calls[0]?.[0].where.AND).toContainEqual(
+      expectedGuestIdentity,
+    );
   });
 
   it('applies branch membership or branch-order scope to list, count, and detail queries', async () => {
