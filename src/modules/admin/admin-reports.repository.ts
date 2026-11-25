@@ -494,8 +494,36 @@ export class AdminReportsRepository {
         lastSentTo: true,
         createdAt: true,
         updatedAt: true,
-        snapshot: true,
       },
+    });
+  }
+
+  listGeneratedInvoiceRestaurants(
+    scope: AdminReportsScope,
+    restaurantIds: string[],
+  ) {
+    return this.prisma.restaurant.findMany({
+      where: {
+        id: { in: restaurantIds },
+        ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        ...(scope.restaurantId ? { id: scope.restaurantId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        tenant: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  listGeneratedInvoiceTenants(scope: AdminReportsScope, tenantIds: string[]) {
+    return this.prisma.tenant.findMany({
+      where: {
+        id: {
+          in: scope.tenantId ? [scope.tenantId] : tenantIds,
+        },
+      },
+      select: { id: true, name: true },
     });
   }
 

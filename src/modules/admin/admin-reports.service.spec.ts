@@ -508,11 +508,13 @@ describe('AdminReportsService', () => {
           lastSentTo: 'billing@restaurant.test',
           createdAt: new Date('2026-07-01T00:30:00.000Z'),
           updatedAt: new Date('2026-07-01T01:00:00.000Z'),
-          snapshot: {
-            documentType: 'INVOICE',
-            tenant: { name: 'Tenant One' },
-            restaurant: { name: 'Pizza House' },
-          },
+        },
+      ]),
+      listGeneratedInvoiceRestaurants: jest.fn().mockResolvedValue([
+        {
+          id: 'restaurant-1',
+          name: 'Pizza House',
+          tenant: { id: 'tenant-1', name: 'Tenant One' },
         },
       ]),
     };
@@ -1365,7 +1367,6 @@ describe('AdminReportsService', () => {
       lastSentTo: null,
       createdAt: new Date('2026-03-29T12:00:00.000Z'),
       updatedAt: new Date('2026-03-29T12:00:00.000Z'),
-      snapshot: { restaurant: { name: 'Pizza House' } },
     });
     const repository = {
       listGeneratedInvoices: jest
@@ -1378,6 +1379,13 @@ describe('AdminReportsService', () => {
       listGeneratedInvoiceBranches: jest
         .fn()
         .mockResolvedValue([{ id: 'branch-1', name: 'Main Branch' }]),
+      listGeneratedInvoiceRestaurants: jest.fn().mockResolvedValue([
+        {
+          id: 'restaurant-1',
+          name: 'Pizza House',
+          tenant: { id: 'tenant-1', name: 'Tenant One' },
+        },
+      ]),
       findGeneratedInvoiceTimezoneScope: jest.fn().mockResolvedValue({
         settings: { timezone: 'Europe/Berlin' },
       }),
@@ -1420,5 +1428,65 @@ describe('AdminReportsService', () => {
       name: 'Main Branch',
     });
     expect(repository.listGeneratedInvoiceBranches).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a 50-row invoice list bounded without loading or serializing snapshots', async () => {
+    const invoices = Array.from({ length: 51 }, (_, index) => ({
+      id: 'invoice-' + (index + 1),
+      invoiceNumber: index === 0 ? 'CRN-AMERICAN-1' : 'WPO-INV-' + (index + 1),
+      kind: index === 0 ? 'SUBSCRIPTION' : 'WEEKLY_PAYOUT',
+      status: 'SENT',
+      tenantId: 'tenant-1',
+      restaurantId: 'american-corner',
+      branchId: null,
+      customerId: null,
+      orderId: null,
+      subscriptionId: 'subscription-1',
+      periodFrom: new Date('2026-11-08T23:00:00.000Z'),
+      periodTo: new Date('2026-11-15T23:00:00.000Z'),
+      currency: 'EUR',
+      totalAmount: 100,
+      sentCount: 1,
+      downloadedCount: 0,
+      lastSentAt: null,
+      lastSentTo: null,
+      createdAt: new Date('2026-11-20T10:00:00.000Z'),
+      updatedAt: new Date('2026-11-20T10:00:00.000Z'),
+    }));
+    const repository = {
+      listGeneratedInvoices: jest.fn().mockResolvedValue(invoices),
+      listGeneratedInvoiceRestaurants: jest.fn().mockResolvedValue([
+        {
+          id: 'american-corner',
+          name: 'American Corner',
+          tenant: { id: 'tenant-1', name: 'DeliveryWay Tenant' },
+        },
+      ]),
+    };
+    const service = new AdminReportsService(repository as never);
+
+    const result = await service.listGeneratedInvoices(
+      {
+        uid: 'owner-1',
+        tid: 'tenant-1',
+        rid: 'american-corner',
+        role: 'BUSINESS_ADMIN',
+      } as never,
+      { kind: 'WEEKLY_PAYOUT', limit: 50 } as never,
+    );
+
+    expect(result.data).toHaveLength(50);
+    expect(result.meta).toEqual({
+      nextCursor: 'invoice-50',
+      hasMore: true,
+      limit: 50,
+    });
+    expect(result.data[0]).toMatchObject({
+      documentType: 'CREDIT_NOTE',
+      restaurant: { id: 'american-corner', name: 'American Corner' },
+      tenant: { id: 'tenant-1', name: 'DeliveryWay Tenant' },
+    });
+    expect(repository.listGeneratedInvoiceRestaurants).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain('snapshot');
   });
 });
