@@ -1130,8 +1130,14 @@ export class PackagePlansService {
       mimeType: 'application/pdf',
       metadata: {
         shopId: invoice.shopId ?? invoice.restaurant.id,
-        periodFrom: this.formatInvoiceDate(invoice.period.from),
-        periodTo: this.formatPayoutPeriodEnd(invoice.period.to),
+        periodFrom: this.formatPayoutExportDate(
+          invoice.period.from,
+          invoice.restaurant.timezone,
+        ),
+        periodTo: this.formatPayoutExportDate(
+          new Date(invoice.period.to.getTime() - 1),
+          invoice.restaurant.timezone,
+        ),
       },
       content,
     };
@@ -3809,7 +3815,7 @@ export class PackagePlansService {
           ],
           rows: [
             invoice.documentType === 'CREDIT_NOTE'
-              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
+              ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWay fees are deducted.`
               : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
             invoice.note ? `Note: ${invoice.note}` : 'Note: N/A',
           ],
@@ -3989,7 +3995,7 @@ export class PackagePlansService {
     return [
       `Hi ${invoice.restaurant?.name ?? invoice.tenant.name},`,
       '',
-      `Please find attached DeliveryWays ${this.formatSubscriptionDocumentType(invoice.documentType).toLowerCase()} ${invoice.invoiceNumber}.`,
+      `Please find attached DeliveryWay ${this.formatSubscriptionDocumentType(invoice.documentType).toLowerCase()} ${invoice.invoiceNumber}.`,
       '',
       `Package: ${invoice.packagePlan.name}`,
       `Service Period: ${this.formatInvoiceDate(invoice.servicePeriod.from)} - ${this.formatInvoiceDate(invoice.servicePeriod.to)}`,
@@ -4002,11 +4008,11 @@ export class PackagePlansService {
       `Fees Total: ${this.formatInvoiceMoney(invoice.totals.totalFeesAmount)} ${invoice.totals.currency}`,
       `Online Payment Credit: -${this.formatInvoiceMoney(invoice.totals.onlinePaymentCreditAmount)} ${invoice.totals.currency}`,
       invoice.documentType === 'CREDIT_NOTE'
-        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWays fees are deducted.`
+        ? `Credit Note Amount: ${this.formatInvoiceMoney(invoice.totals.creditAmount)} ${invoice.totals.currency} remaining credit owed to the restaurant after DeliveryWay fees are deducted.`
         : `Invoice Amount Due: ${this.formatInvoiceMoney(invoice.totals.amountDue)} ${invoice.totals.currency}`,
       `Payment Status: ${invoice.paymentStatus}`,
       '',
-      'DeliveryWays',
+      'DeliveryWay',
     ].join('\n');
   }
 
@@ -4034,11 +4040,17 @@ export class PackagePlansService {
         },
         {
           label: 'Payout From',
-          value: this.formatInvoiceDate(invoice.period.from),
+          value: this.formatInvoiceDate(
+            invoice.period.from,
+            invoice.restaurant.timezone,
+          ),
         },
         {
           label: 'Payout To',
-          value: this.formatPayoutPeriodEnd(invoice.period.to),
+          value: this.formatPayoutPeriodEnd(
+            invoice.period.to,
+            invoice.restaurant.timezone,
+          ),
         },
         { label: 'Orders Count', value: invoice.totals.ordersCount },
         { label: 'Currency', value: invoice.totals.currency },
@@ -4161,9 +4173,9 @@ export class PackagePlansService {
     return [
       `Hi ${invoice.restaurant.name},`,
       '',
-      `Please find attached DeliveryWays payout invoice ${invoice.invoiceNumber}.`,
+      `Please find attached DeliveryWay payout invoice ${invoice.invoiceNumber}.`,
       '',
-      `Payout Period: ${this.formatInvoiceDate(invoice.period.from)} - ${this.formatInvoiceDate(invoice.period.to)}`,
+      `Payout Period: ${this.formatInvoiceDate(invoice.period.from, invoice.restaurant.timezone)} - ${this.formatPayoutPeriodEnd(invoice.period.to, invoice.restaurant.timezone)}`,
       `Gross Collected: ${this.formatInvoiceMoney(invoice.totals.grossAmount)} ${invoice.totals.currency}`,
       `Platform Commission: ${this.formatInvoiceMoney(invoice.totals.platformCommissionAmount)} ${invoice.totals.currency}`,
       `Restaurant-paid Transaction Fees: ${this.formatInvoiceMoney(invoice.totals.restaurantTransactionFeeAmount)} ${invoice.totals.currency}`,
@@ -4172,7 +4184,7 @@ export class PackagePlansService {
       `VAT (${invoice.totals.vatPercentage}%): ${this.formatInvoiceMoney(invoice.totals.vatAmount)} ${invoice.totals.currency}`,
       `Restaurant Payout Due: ${this.formatInvoiceMoney(invoice.totals.restaurantPayoutAmount)} ${invoice.totals.currency}`,
       '',
-      'DeliveryWays',
+      'DeliveryWay',
     ].join('\n');
   }
 
@@ -4231,7 +4243,7 @@ export class PackagePlansService {
     const content = this.generateSubscriptionInvoicePdf(invoice);
     await this.mailerService.sendEmail(
       recipientEmail,
-      `DeliveryWays ${this.formatSubscriptionDocumentType(
+      `DeliveryWay ${this.formatSubscriptionDocumentType(
         invoice.documentType,
       ).toLowerCase()} ${invoice.invoiceNumber}`,
       this.buildSubscriptionInvoiceEmailBody(invoice),
@@ -4271,7 +4283,7 @@ export class PackagePlansService {
     ) {
       await this.mailerService.sendEmail(
         recipientEmail,
-        `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
+        `DeliveryWay payout invoice ${invoice.invoiceNumber}`,
         this.buildWeeklyPayoutInvoiceEmailBody(invoice),
         {
           attachments: [
@@ -4328,7 +4340,7 @@ export class PackagePlansService {
     try {
       await this.mailerService.sendEmail(
         deliveryRecipient,
-        `DeliveryWays payout invoice ${invoice.invoiceNumber}`,
+        `DeliveryWay payout invoice ${invoice.invoiceNumber}`,
         this.buildWeeklyPayoutInvoiceEmailBody(invoice),
         {
           attachments: [
@@ -4789,8 +4801,8 @@ export class PackagePlansService {
     return [street, city].filter(Boolean).join(', ') || null;
   }
 
-  private formatPayoutPeriodEnd(value: Date) {
-    return this.formatInvoiceDate(new Date(value.getTime() - 1));
+  private formatPayoutPeriodEnd(value: Date, timeZone = 'UTC') {
+    return this.formatInvoiceDate(new Date(value.getTime() - 1), timeZone);
   }
 
   private buildPayoutExportFileName(
@@ -4798,8 +4810,14 @@ export class PackagePlansService {
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
     >,
   ) {
-    const periodFrom = this.formatInvoiceDate(invoice.period.from);
-    const periodTo = this.formatPayoutPeriodEnd(invoice.period.to);
+    const periodFrom = this.formatPayoutExportDate(
+      invoice.period.from,
+      invoice.restaurant.timezone,
+    );
+    const periodTo = this.formatPayoutExportDate(
+      new Date(invoice.period.to.getTime() - 1),
+      invoice.restaurant.timezone,
+    );
     return (
       [
         'deliveryway-payout',
@@ -4878,8 +4896,8 @@ export class PackagePlansService {
     const restaurant = this.asJsonObject(snapshot.restaurant ?? null);
     const restaurantName = this.readStringValue(restaurant.name);
     return restaurantName
-      ? `DeliveryWays ${invoiceNumber} ${restaurantName}`
-      : `DeliveryWays ${invoiceNumber}`;
+      ? `DeliveryWay ${invoiceNumber} ${restaurantName}`
+      : `DeliveryWay ${invoiceNumber}`;
   }
 
   private csvEscape(value: string) {
@@ -4906,8 +4924,26 @@ export class PackagePlansService {
       .join(' ');
   }
 
-  private formatInvoiceDate(value: Date | null | undefined) {
-    return value ? value.toISOString().slice(0, 10) : 'N/A';
+  private formatInvoiceDate(value: Date | null | undefined, timeZone = 'UTC') {
+    if (!value) return 'N/A';
+    return new Intl.DateTimeFormat('de-DE', {
+      timeZone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(value);
+  }
+
+  private formatPayoutExportDate(value: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((item) => item.type === type)?.value ?? '';
+    return `${part('year')}-${part('month')}-${part('day')}`;
   }
 
   private formatInvoiceDateTime(

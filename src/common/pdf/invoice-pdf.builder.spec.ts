@@ -30,6 +30,40 @@ describe('InvoicePdfBuilder direction', () => {
     expect(text).toContain('Td (Alpha) Tj ET');
     expect(text).toContain('BT /F1 8.5 Tf 48');
     expect(text).toContain('Td (Legal address) Tj ET');
+    expect(text).toContain('BT /F1 13 Tf 48');
+    expect(text).toContain('(Issued: 23.11.2026)');
+  });
+
+  it('keeps wide tables within the printable page width', () => {
+    const pdf = InvoicePdfBuilder.build({
+      ...input,
+      sections: [
+        {
+          title: 'Monthly Billing Status',
+          tables: [
+            {
+              columns: Array.from({ length: 6 }, (_, index) => ({
+                header: `Column ${index + 1}`,
+                width: 115,
+              })),
+              rows: [['1', '2', '3', '4', '5', '6']],
+            },
+          ],
+        },
+      ],
+    });
+    const rectangles = [
+      ...pdf
+        .toString('utf8')
+        .matchAll(/0\.5 w ([\d.]+) [\d.]+ ([\d.]+) 18 re B/g),
+    ];
+
+    expect(rectangles).toHaveLength(12);
+    for (const rectangle of rectangles) {
+      expect(Number(rectangle[1]) + Number(rectangle[2])).toBeLessThanOrEqual(
+        547.01,
+      );
+    }
   });
 
   it('right-aligns body, metadata, tables, headers, and footer for RTL PDFs', () => {
