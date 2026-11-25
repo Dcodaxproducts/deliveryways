@@ -126,10 +126,10 @@ describe('PackagePlansService', () => {
       name: 'Main',
       settings: {
         address: {
-          street: 'Market Street',
-          shopNumber: '12A',
-          postalCode: '10115',
-          city: 'Berlin',
+          street: 'Katernberger Str.',
+          shopNumber: '7-9',
+          postalCode: '45327',
+          city: 'Essen',
           country: 'Germany',
         },
       },
@@ -1385,8 +1385,8 @@ describe('PackagePlansService', () => {
 
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
-      'DeliveryWays invoice SUB-INV-12345678-20260701',
-      expect.stringContaining('Please find attached DeliveryWays invoice'),
+      'DeliveryWay invoice SUB-INV-12345678-20260701',
+      expect.stringContaining('Please find attached DeliveryWay invoice'),
       expect.objectContaining({
         attachments: [
           expect.objectContaining({
@@ -1929,8 +1929,8 @@ describe('PackagePlansService', () => {
 
     const result = await service.downloadWeeklyPayoutInvoicePdf(superAdmin, {
       restaurantId: 'restaurant-1',
-      fromDate: '2026-11-09T00:00:00.000Z',
-      toDate: '2026-11-16T00:00:00.000Z',
+      fromDate: '2026-11-08T23:00:00.000Z',
+      toDate: '2026-11-15T23:00:00.000Z',
     });
     const pdfText = result.content.toString('utf8');
 
@@ -1956,8 +1956,11 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('10.11.2026, 11:00');
     expect(pdfText).toContain('Stripe');
     expect(pdfText).toContain('Mina Owner');
-    expect(pdfText).toContain('Market Street 12A, 10115 Berlin');
+    expect(pdfText).toContain('Katernberger Str. 7-9, 45327 Essen');
     expect(pdfText).not.toContain('Germany ·');
+    expect(pdfText).toContain('09.11.2026');
+    expect(pdfText).toContain('15.11.2026');
+    expect(pdfText).not.toContain('DeliveryWays');
     expect(pdfText).toContain('Accounting invariant');
   });
 
@@ -2096,7 +2099,7 @@ describe('PackagePlansService', () => {
     expect(result).toEqual({ sent: 1, skipped: 0 });
     expect(mailerService.sendEmail).toHaveBeenCalledWith(
       'billing@pizza.test',
-      'DeliveryWays invoice SUB-INV-12345678-20260701',
+      'DeliveryWay invoice SUB-INV-12345678-20260701',
       expect.any(String),
       expect.any(Object),
     );

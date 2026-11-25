@@ -252,8 +252,7 @@ export class InvoicePdfBuilder {
       } else if ('label' in line) {
         this.pushKeyValue(commands, line, y, input.direction ?? 'ltr');
       } else {
-        const font =
-          line.style === 'heading' || line.style === 'subheading' ? 'F2' : 'F1';
+        const font = line.style === 'subheading' ? 'F2' : 'F1';
         const size = this.fontSize(line.style);
         const textWidth = this.estimateTextWidth(line.text, size);
         const textX =
@@ -286,13 +285,13 @@ export class InvoicePdfBuilder {
     if ('cells' in line) return TABLE_ROW_HEIGHT;
     if ('label' in line) return 15;
     const { style } = line;
-    return style === 'heading' ? 22 : style === 'subheading' ? 18 : LINE_HEIGHT;
+    return style === 'heading' ? 18 : style === 'subheading' ? 18 : LINE_HEIGHT;
   }
 
   private static fontSize(style: PdfTextStyle) {
     switch (style) {
       case 'heading':
-        return 16;
+        return 13;
       case 'subheading':
         return 12;
       case 'small':
@@ -408,7 +407,12 @@ export class InvoicePdfBuilder {
   }
 
   private static formatDate(value: Date) {
-    return value.toISOString().slice(0, 10);
+    return new Intl.DateTimeFormat('de-DE', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(value);
   }
 
   private static wrap(text: string) {
