@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { PackagePlansService } from './package-plans.service';
 import { PayoutInvoiceEmailReconciliationAction } from './dto';
+import { legacyAmericanCornerPayoutSnapshot } from './legacy-payout-snapshot.fixture';
 
 describe('PackagePlansService', () => {
   const superAdmin = { uid: 'admin-1', role: 'SUPER_ADMIN' } as never;
@@ -1999,6 +2000,135 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Order Payout Details');
     expect(pdfText).toContain('order-1');
     expect(pdfText).toContain('Platform Commission');
+  });
+
+  it('repairs and enriches the finalized legacy American Corner payout only at render time', async () => {
+    const snapshot = JSON.parse(
+      JSON.stringify(legacyAmericanCornerPayoutSnapshot),
+    ) as Prisma.JsonValue;
+    const findPayoutInvoiceDisplayScope = jest.fn().mockResolvedValue({
+      id: 'restaurant-american-corner',
+      tenantId: 'tenant-american-corner',
+      settings: null,
+      branches: [
+        {
+          id: 'branch-american-corner',
+          name: 'American Corner',
+          isMain: true,
+          settings: {
+            address: {
+              street: 'Katernberger Str.',
+              shopNumber: '7-9',
+              postalCode: '45327',
+              city: 'Essen',
+              country: 'Deutschland',
+            },
+          },
+          manager: {
+            profile: { firstName: 'Mina', lastName: 'Owner' },
+          },
+        },
+      ],
+    });
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-american-corner',
+        settings: { timezone: 'Europe/Berlin' },
+      }),
+      findActiveRestaurantSubscription: jest.fn().mockResolvedValue(null),
+      findFinalizedPayoutInvoice: jest.fn().mockResolvedValue({
+        id: 'invoice-american-corner',
+        invoiceNumber: legacyAmericanCornerPayoutSnapshot.invoiceNumber,
+        snapshot,
+      }),
+      findPayoutInvoiceDisplayScope,
+    };
+    const globalSettingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        data: {
+          landingPageSettings: {
+            legalProfile: {
+              businessAddress: {
+                street: 'DeliveryWay Platz',
+                shopNumber: '1',
+                postalCode: '10115',
+                city: 'Berlin',
+                country: 'Deutschland',
+              },
+            },
+          },
+        },
+      }),
+    };
+    const invoiceRecordsService = { recordDownload: jest.fn() };
+    const service = new PackagePlansService(
+      repository as never,
+      undefined,
+      globalSettingsService as never,
+      invoiceRecordsService as never,
+    );
+
+    const result = await service.downloadWeeklyPayoutInvoicePdf(superAdmin, {
+      restaurantId: 'restaurant-american-corner',
+      fromDate: '2026-11-08T23:00:00.000Z',
+      toDate: '2026-11-15T23:00:00.000Z',
+    });
+    const pdfText = result.content.toString('utf8');
+
+    expect(pdfText.match(/154\.21/g)).toHaveLength(2);
+    expect(pdfText).not.toContain('(163.19)');
+    expect(pdfText).toContain('Katernberger Str. 7-9, 45327 Essen');
+    expect(pdfText).not.toContain(
+      'Katernberger Str., Essen, 45327, Deutschland',
+    );
+    expect(pdfText).toContain('Mina Owner');
+    expect(pdfText).toContain('DeliveryWay Platz 1, 10115 Berlin, Deutschland');
+    expect(pdfText).toContain('BT /F1 8.5 Tf 48 766 Td');
+    for (const requiredText of [
+      'Commission This Payout',
+      'Commission Month Total',
+      'Commission Cap Left',
+      'Monthly Fee Deducted',
+      'Monthly Fee Outstanding',
+      'Total Successful Order Amount:',
+      'Restaurant-paid Transaction Fees:',
+    ]) {
+      expect(pdfText).toContain(requiredText);
+    }
+    for (const truncatedText of [
+      'Commission This...',
+      'Commission Month...',
+      'Commission Cap...',
+      'Monthly Fee D...',
+      'Monthly Fee O...',
+      'Total Successful Order A...',
+      'Restaurant-paid Transact...',
+    ]) {
+      expect(pdfText).not.toContain(truncatedText);
+    }
+    const rectangles = [
+      ...pdfText.matchAll(/0\.5 w ([\d.]+) [\d.]+ ([\d.]+) 18 re B/g),
+    ];
+    expect(rectangles.length).toBeGreaterThan(0);
+    for (const rectangle of rectangles) {
+      expect(Number(rectangle[1]) + Number(rectangle[2])).toBeLessThanOrEqual(
+        547.01,
+      );
+    }
+    expect(findPayoutInvoiceDisplayScope).toHaveBeenCalledTimes(1);
+    expect(findPayoutInvoiceDisplayScope).toHaveBeenCalledWith(
+      'restaurant-american-corner',
+      'tenant-american-corner',
+      ['branch-american-corner'],
+    );
+    expect(invoiceRecordsService.recordDownload).toHaveBeenCalledWith(
+      'invoice-american-corner',
+      'admin-1',
+    );
+    expect(
+      (snapshot as unknown as { totals: { restaurantPayoutAmount: number } })
+        .totals.restaurantPayoutAmount,
+    ).toBe(163.19);
   });
 
   it('invoices monthly plans monthly for every payout cadence', async () => {

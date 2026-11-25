@@ -1117,9 +1117,12 @@ export class PackagePlansService {
   ) {
     this.ensureSuperAdmin(user);
     const stored = await this.findStoredPayoutInvoice(query);
-    const invoice = stored
+    let invoice = stored
       ? this.hydrateStoredPayoutInvoiceSnapshot(stored.snapshot)
       : await this.buildWeeklyPayoutInvoice(query);
+    if (stored) {
+      invoice = await this.enrichStoredPayoutInvoiceForRendering(invoice);
+    }
     const content = this.generateWeeklyPayoutInvoicePdf(invoice);
     if (stored) {
       await this.invoiceRecordsService?.recordDownload(stored.id, user.uid);
@@ -3601,7 +3604,7 @@ export class PackagePlansService {
   }
 
   private resolveRestaurantPayoutAddress(restaurant: RestaurantPayoutScope) {
-    return this.resolveRestaurantAddressFromSettings(restaurant.settings);
+    return this.resolveCompactBranchAddress(restaurant.settings);
   }
 
   private resolveRestaurantPayoutTaxNumber(restaurant: RestaurantPayoutScope) {
@@ -4977,14 +4980,27 @@ export class PackagePlansService {
     const invoice = snapshot as unknown as Awaited<
       ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
     >;
+    const monthlyFeeDeductedAmount =
+      invoice.totals.monthlyFeeDeductedAmount ?? 0;
+    const restaurantPayoutAmount = Prisma.Decimal.max(
+      new Prisma.Decimal(invoice.totals.grossAmount)
+        .minus(invoice.totals.platformCommissionAmount)
+        .minus(invoice.totals.restaurantTransactionFeeAmount)
+        .minus(invoice.totals.vatAmount)
+        .minus(invoice.totals.previousPayoutAmount ?? 0)
+        .minus(monthlyFeeDeductedAmount),
+      new Prisma.Decimal(0),
+    ).toDecimalPlaces(2);
+
     return {
       ...invoice,
       monthlyBilling: invoice.monthlyBilling ?? { months: [] },
       totals: {
         ...invoice.totals,
-        monthlyFeeDeductedAmount: invoice.totals.monthlyFeeDeductedAmount ?? 0,
+        monthlyFeeDeductedAmount,
         monthlyFeeOutstandingAmount:
           invoice.totals.monthlyFeeOutstandingAmount ?? 0,
+        restaurantPayoutAmount: Number(restaurantPayoutAmount),
       },
       issuedAt: this.parseStoredInvoiceDate(invoice.issuedAt),
       period: {
@@ -4995,6 +5011,77 @@ export class PackagePlansService {
         ...item,
         paidAt: item.paidAt ? this.parseStoredInvoiceDate(item.paidAt) : null,
       })),
+    };
+  }
+
+  private async enrichStoredPayoutInvoiceForRendering(
+    invoice: Awaited<
+      ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
+    >,
+  ) {
+    const tenantId = invoice.tenant?.id;
+    const branchIds = [
+      ...new Set(
+        invoice.lineItems
+          .map((item) => item.branch?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ].slice(0, 500);
+    const [displayScope, platformLegalAddress] = await Promise.all([
+      tenantId
+        ? this.packagePlansRepository.findPayoutInvoiceDisplayScope(
+            invoice.restaurant.id,
+            tenantId,
+            branchIds,
+          )
+        : Promise.resolve(null),
+      invoice.platformLegalAddress
+        ? Promise.resolve(invoice.platformLegalAddress)
+        : this.resolveDeliveryWayLegalAddress(),
+    ]);
+
+    if (!displayScope) {
+      return { ...invoice, platformLegalAddress };
+    }
+
+    const branchesById = new Map(
+      displayScope.branches.map((branch) => [branch.id, branch]),
+    );
+    const primaryBranch =
+      displayScope.branches.find((branch) => branch.isMain) ??
+      displayScope.branches[0];
+    const currentRestaurantAddress =
+      (primaryBranch
+        ? this.resolveCompactBranchAddress(primaryBranch.settings)
+        : null) ??
+      this.resolveCompactBranchAddress(displayScope.settings) ??
+      invoice.restaurant.address;
+
+    return {
+      ...invoice,
+      platformLegalAddress,
+      restaurant: {
+        ...invoice.restaurant,
+        address: currentRestaurantAddress,
+      },
+      lineItems: invoice.lineItems.map((item) => {
+        const currentBranch = item.branch
+          ? branchesById.get(item.branch.id)
+          : undefined;
+        if (!item.branch || !currentBranch) return item;
+
+        return {
+          ...item,
+          branch: {
+            ...item.branch,
+            name: currentBranch.name,
+            ownerName: this.resolveBranchOwnerName(currentBranch),
+            address:
+              this.resolveCompactBranchAddress(currentBranch.settings) ??
+              item.branch.address,
+          },
+        };
+      }),
     };
   }
 

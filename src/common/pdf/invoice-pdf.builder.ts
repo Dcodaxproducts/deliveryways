@@ -237,7 +237,7 @@ export class InvoicePdfBuilder {
         ? Math.max(LEFT, PAGE_WIDTH - LEFT - this.estimateTextWidth(line, size))
         : LEFT;
       commands.push(
-        `BT /F1 ${size} Tf ${x} ${PAGE_HEIGHT - 38 - index * 14} Td (${this.escape(line)}) Tj ET`,
+        `BT /F1 ${size} Tf ${x} ${PAGE_HEIGHT - 76 - index * 11} Td (${this.escape(line)}) Tj ET`,
       );
     }
     commands.push('0.12 0.12 0.12 rg');
@@ -331,13 +331,17 @@ export class InvoicePdfBuilder {
   ) {
     let x = LEFT;
     const font = line.style === 'tableHeader' ? 'F2' : 'F1';
-    const size = line.style === 'tableHeader' ? 8.5 : 8;
+    const defaultSize = line.style === 'tableHeader' ? 8.5 : 8;
     const rowBottom = y - 5;
     const fill = line.style === 'tableHeader' ? '0.93 0.94 0.96' : '1 1 1';
 
     for (const [index, cell] of line.cells.entries()) {
       const width = line.widths[index] ?? 60;
-      const text = this.truncateForWidth(cell, width - 8);
+      const size =
+        line.style === 'tableHeader'
+          ? this.fitTextSize(cell, width - 8, defaultSize, 5.5)
+          : defaultSize;
+      const text = this.truncateForWidth(cell, width - 8, size);
       const textX =
         line.alignments[index] === 'right'
           ? x + width - 4 - this.estimateTextWidth(text, size)
@@ -371,16 +375,17 @@ export class InvoicePdfBuilder {
       return;
     }
 
-    const labelWidth = 145;
+    const labelWidth = 210;
     const valueX = LEFT + labelWidth;
     const valueWidth = TABLE_WIDTH - labelWidth;
+    const valueSize = this.fitTextSize(line.value, valueWidth, 9.5, 5.5);
 
     commands.push(
       `BT /F2 9.5 Tf ${LEFT} ${y} Td (${this.escape(
-        this.truncateForWidth(`${line.label}:`, labelWidth - 12),
+        this.truncateForWidth(`${line.label}:`, labelWidth - 12, 9.5),
       )}) Tj ET`,
-      `BT /F1 9.5 Tf ${valueX} ${y} Td (${this.escape(
-        this.truncateForWidth(line.value, valueWidth),
+      `BT /F1 ${valueSize} Tf ${valueX} ${y} Td (${this.escape(
+        this.truncateForWidth(line.value, valueWidth, valueSize),
       )}) Tj ET`,
     );
   }
@@ -400,8 +405,21 @@ export class InvoicePdfBuilder {
     return { label, value };
   }
 
-  private static truncateForWidth(text: string, width: number) {
-    const maxChars = Math.max(Math.floor(width / 4.8), 4);
+  private static fitTextSize(
+    text: string,
+    width: number,
+    preferredSize: number,
+    minimumSize: number,
+  ) {
+    if (!text.length) return preferredSize;
+    return Math.max(
+      minimumSize,
+      Math.min(preferredSize, width / (text.length * 0.48)),
+    );
+  }
+
+  private static truncateForWidth(text: string, width: number, fontSize = 10) {
+    const maxChars = Math.max(Math.floor(width / (fontSize * 0.48)), 4);
     if (text.length <= maxChars) return text;
     return `${text.slice(0, maxChars - 3)}...`;
   }

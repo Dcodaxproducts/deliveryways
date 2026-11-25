@@ -587,6 +587,41 @@ export class PackagePlansRepository {
     });
   }
 
+  findPayoutInvoiceDisplayScope(
+    restaurantId: string,
+    tenantId: string,
+    branchIds: string[],
+  ) {
+    return this.prisma.restaurant.findFirst({
+      where: { id: restaurantId, tenantId, deletedAt: null },
+      select: {
+        id: true,
+        tenantId: true,
+        settings: true,
+        branches: {
+          where: {
+            id: { in: branchIds.slice(0, 500) },
+            tenantId,
+            deletedAt: null,
+          },
+          orderBy: [{ isMain: 'desc' }, { id: 'asc' }],
+          take: 500,
+          select: {
+            id: true,
+            name: true,
+            isMain: true,
+            settings: true,
+            manager: {
+              select: {
+                profile: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
   listPaidRestaurantOrders(
     restaurantId: string,
     fromDate: Date,
