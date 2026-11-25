@@ -1146,7 +1146,7 @@ export class PackagePlansService {
     };
   }
 
-  generateStoredInvoicePdf(
+  async generateStoredInvoicePdf(
     kind: GeneratedInvoiceKind,
     snapshot: Prisma.JsonValue,
   ) {
@@ -1205,31 +1205,11 @@ export class PackagePlansService {
     }
 
     if (kind === GeneratedInvoiceKind.WEEKLY_PAYOUT) {
-      const invoice = snapshot as unknown as Awaited<
-        ReturnType<PackagePlansService['buildWeeklyPayoutInvoice']>
-      >;
-      const hydratedInvoice = {
-        ...invoice,
-        monthlyBilling: invoice.monthlyBilling ?? { months: [] },
-        totals: {
-          ...invoice.totals,
-          monthlyFeeDeductedAmount:
-            invoice.totals.monthlyFeeDeductedAmount ?? 0,
-          monthlyFeeOutstandingAmount:
-            invoice.totals.monthlyFeeOutstandingAmount ?? 0,
-        },
-        issuedAt: this.parseStoredInvoiceDate(invoice.issuedAt),
-        period: {
-          from: this.parseStoredInvoiceDate(invoice.period.from),
-          to: this.parseStoredInvoiceDate(invoice.period.to),
-        },
-        lineItems: invoice.lineItems.map((item) => ({
-          ...item,
-          paidAt: item.paidAt ? this.parseStoredInvoiceDate(item.paidAt) : null,
-        })),
-      };
+      const hydratedInvoice = this.hydrateStoredPayoutInvoiceSnapshot(snapshot);
+      const enrichedInvoice =
+        await this.enrichStoredPayoutInvoiceForRendering(hydratedInvoice);
 
-      return this.generateWeeklyPayoutInvoicePdf(hydratedInvoice);
+      return this.generateWeeklyPayoutInvoicePdf(enrichedInvoice);
     }
 
     throw new BadRequestException('Stored invoice kind is not supported');
@@ -5028,7 +5008,9 @@ export class PackagePlansService {
       ),
     ].slice(0, 500);
     const [displayScope, platformLegalAddress] = await Promise.all([
-      tenantId
+      tenantId &&
+      typeof this.packagePlansRepository.findPayoutInvoiceDisplayScope ===
+        'function'
         ? this.packagePlansRepository.findPayoutInvoiceDisplayScope(
             invoice.restaurant.id,
             tenantId,

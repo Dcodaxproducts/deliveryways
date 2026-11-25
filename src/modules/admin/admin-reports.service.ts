@@ -609,7 +609,7 @@ export class AdminReportsService {
       );
     }
 
-    const content = this.packagePlansService.generateStoredInvoicePdf(
+    const content = await this.packagePlansService.generateStoredInvoicePdf(
       invoice.kind,
       invoice.snapshot,
     );
@@ -676,7 +676,7 @@ export class AdminReportsService {
       (invoice.kind === GeneratedInvoiceKind.SUBSCRIPTION ||
         invoice.kind === GeneratedInvoiceKind.WEEKLY_PAYOUT)
     ) {
-      const content = this.packagePlansService.generateStoredInvoicePdf(
+      const content = await this.packagePlansService.generateStoredInvoicePdf(
         invoice.kind,
         invoice.snapshot,
       );

@@ -1347,7 +1347,7 @@ describe('PackagePlansService', () => {
     delete snapshotObject.payoutActivity;
     const snapshot = snapshotObject as unknown as Prisma.JsonValue;
 
-    const pdf = service.generateStoredInvoicePdf(
+    const pdf = await service.generateStoredInvoicePdf(
       GeneratedInvoiceKind.SUBSCRIPTION,
       snapshot,
     );
@@ -1991,7 +1991,7 @@ describe('PackagePlansService', () => {
       JSON.stringify(invoice.data),
     ) as Prisma.JsonValue;
 
-    const pdf = service.generateStoredInvoicePdf(
+    const pdf = await service.generateStoredInvoicePdf(
       GeneratedInvoiceKind.WEEKLY_PAYOUT,
       snapshot,
     );
