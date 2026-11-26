@@ -4794,6 +4794,29 @@ export class PackagePlansService {
     return name || null;
   }
 
+  private resolveBranchAddressRecord(
+    address:
+      | {
+          street?: string | null;
+          area?: string | null;
+          postalCode?: string | null;
+          city?: string | null;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!address) return null;
+    const street = [address.street, address.area]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join(' ');
+    const city = [address.postalCode, address.city]
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .join(' ');
+    return [street, city].filter(Boolean).join(', ') || null;
+  }
+
   private resolveCompactBranchAddress(settings: Prisma.JsonValue | null) {
     const root = this.asJsonObject(settings);
     const address = this.asJsonObject(
@@ -4812,10 +4835,14 @@ export class PackagePlansService {
       .join(' ');
     const city = [
       address.postalCode ??
+        address.postCode ??
+        address.postal_code ??
+        address.post_code ??
+        address.postcode ??
         address.zipCode ??
         address.zip_code ??
-        address.postcode ??
-        address.postal_code,
+        address.zipcode ??
+        address.zip,
       address.city,
     ]
       .map((value) => this.readStringValue(value))
@@ -5074,7 +5101,8 @@ export class PackagePlansService {
       displayScope.branches[0];
     const currentRestaurantAddress =
       (primaryBranch
-        ? this.resolveCompactBranchAddress(primaryBranch.settings)
+        ? (this.resolveBranchAddressRecord(primaryBranch.address) ??
+          this.resolveCompactBranchAddress(primaryBranch.settings))
         : null) ??
       this.resolveCompactBranchAddress(displayScope.settings) ??
       invoice.restaurant.address;
@@ -5097,8 +5125,13 @@ export class PackagePlansService {
           branch: {
             ...item.branch,
             name: currentBranch.name,
-            ownerName: this.resolveBranchOwnerName(currentBranch),
+            ownerName:
+              this.resolveBranchOwnerName(currentBranch) ??
+              (currentBranch.id === primaryBranch?.id
+                ? this.resolveBranchOwnerName({ users: displayScope.users })
+                : null),
             address:
+              this.resolveBranchAddressRecord(currentBranch.address) ??
               this.resolveCompactBranchAddress(currentBranch.settings) ??
               item.branch.address,
           },

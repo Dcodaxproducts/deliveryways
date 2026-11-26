@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
+  AddressRefType,
   GeneratedInvoiceEventType,
   GeneratedInvoiceKind,
   GeneratedInvoiceStatus,
@@ -588,51 +589,98 @@ export class PackagePlansRepository {
     });
   }
 
-  findPayoutInvoiceDisplayScope(
+  async findPayoutInvoiceDisplayScope(
     restaurantId: string,
     tenantId: string,
     branchIds: string[],
   ) {
-    return this.prisma.restaurant.findFirst({
-      where: { id: restaurantId, tenantId, deletedAt: null },
-      select: {
-        id: true,
-        tenantId: true,
-        settings: true,
-        branches: {
-          where: {
-            id: { in: branchIds.slice(0, 500) },
-            tenantId,
-            deletedAt: null,
-          },
-          orderBy: [{ isMain: 'desc' }, { id: 'asc' }],
-          take: 500,
-          select: {
-            id: true,
-            name: true,
-            isMain: true,
-            settings: true,
-            manager: {
-              select: {
-                profile: { select: { firstName: true, lastName: true } },
-              },
+    const boundedBranchIds = branchIds.slice(0, 500);
+    const [scope, addresses] = await Promise.all([
+      this.prisma.restaurant.findFirst({
+        where: { id: restaurantId, tenantId, deletedAt: null },
+        select: {
+          id: true,
+          tenantId: true,
+          settings: true,
+          users: {
+            where: {
+              tenantId,
+              branchId: null,
+              role: UserRole.BRANCH_ADMIN,
+              isActive: true,
+              deletedAt: null,
             },
-            users: {
-              where: {
-                role: UserRole.BRANCH_ADMIN,
-                isActive: true,
-                deletedAt: null,
+            orderBy: { createdAt: 'asc' },
+            take: 1,
+            select: {
+              profile: { select: { firstName: true, lastName: true } },
+            },
+          },
+          branches: {
+            where: {
+              id: { in: boundedBranchIds },
+              tenantId,
+              deletedAt: null,
+            },
+            orderBy: [{ isMain: 'desc' }, { id: 'asc' }],
+            take: 500,
+            select: {
+              id: true,
+              name: true,
+              isMain: true,
+              settings: true,
+              manager: {
+                select: {
+                  profile: { select: { firstName: true, lastName: true } },
+                },
               },
-              orderBy: { createdAt: 'asc' },
-              take: 1,
-              select: {
-                profile: { select: { firstName: true, lastName: true } },
+              users: {
+                where: {
+                  role: UserRole.BRANCH_ADMIN,
+                  isActive: true,
+                  deletedAt: null,
+                },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: {
+                  profile: { select: { firstName: true, lastName: true } },
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      boundedBranchIds.length
+        ? this.prisma.address.findMany({
+            where: {
+              tenantId,
+              referenceId: { in: boundedBranchIds },
+              refType: AddressRefType.BRANCH,
+              isActive: true,
+              deletedAt: null,
+            },
+            select: {
+              referenceId: true,
+              street: true,
+              area: true,
+              postalCode: true,
+              city: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!scope) return null;
+    const addressesByBranchId = new Map(
+      addresses.map((address) => [address.referenceId, address]),
+    );
+    return {
+      ...scope,
+      branches: scope.branches.map((branch) => ({
+        ...branch,
+        address: addressesByBranchId.get(branch.id) ?? null,
+      })),
+    };
   }
 
   listPaidRestaurantOrders(

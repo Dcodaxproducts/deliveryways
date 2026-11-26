@@ -88,6 +88,92 @@ describe('PackagePlansRepository public landing visibility', () => {
   });
 });
 
+describe('PackagePlansRepository payout display scope', () => {
+  it('hydrates bounded normalized addresses and legacy restaurant branch admins', async () => {
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      settings: null,
+      users: [{ profile: { firstName: 'Mina', lastName: 'Owner' } }],
+      branches: [
+        {
+          id: 'branch-1',
+          name: 'American Corner',
+          isMain: true,
+          settings: null,
+          manager: null,
+          users: [],
+        },
+      ],
+    });
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        referenceId: 'branch-1',
+        street: 'Katernberger Str.',
+        area: '7-9',
+        postalCode: '45327',
+        city: 'Essen',
+      },
+    ]);
+    const repository = new PackagePlansRepository({
+      restaurant: { findFirst },
+      address: { findMany },
+    } as never);
+    const branchIds = Array.from(
+      { length: 501 },
+      (_, index) => `branch-${index + 1}`,
+    );
+
+    const result = await repository.findPayoutInvoiceDisplayScope(
+      'restaurant-1',
+      'tenant-1',
+      branchIds,
+    );
+
+    expect(result?.branches[0]?.address).toEqual(
+      expect.objectContaining({ postalCode: '45327' }),
+    );
+    type DisplayScopeQuery = {
+      where: Record<string, unknown>;
+      select: {
+        users: { where: Record<string, unknown>; take: number };
+        branches: { where: { id: { in: string[] } } };
+      };
+    };
+    const restaurantCalls = findFirst.mock.calls as unknown as Array<
+      [DisplayScopeQuery]
+    >;
+    const restaurantQuery = restaurantCalls[0][0];
+    expect(restaurantQuery.where).toEqual({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+    });
+    expect(restaurantQuery.select.users).toMatchObject({
+      where: {
+        tenantId: 'tenant-1',
+        branchId: null,
+        role: 'BRANCH_ADMIN',
+        isActive: true,
+        deletedAt: null,
+      },
+      take: 1,
+    });
+    expect(restaurantQuery.select.branches.where.id.in).toHaveLength(500);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tenantId: 'tenant-1',
+          referenceId: { in: branchIds.slice(0, 500) },
+          refType: 'BRANCH',
+          isActive: true,
+          deletedAt: null,
+        },
+      }),
+    );
+  });
+});
+
 type CreateWalletTransactionCall = {
   data: {
     subscriptionInvoiceKey: string;

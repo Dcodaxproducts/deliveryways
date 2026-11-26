@@ -2010,6 +2010,7 @@ describe('PackagePlansService', () => {
       id: 'restaurant-american-corner',
       tenantId: 'tenant-american-corner',
       settings: null,
+      users: [{ profile: { firstName: 'Mina', lastName: 'Owner' } }],
       branches: [
         {
           id: 'branch-american-corner',
@@ -2025,7 +2026,14 @@ describe('PackagePlansService', () => {
             },
           },
           manager: null,
-          users: [{ profile: { firstName: 'Mina', lastName: 'Owner' } }],
+          users: [],
+          address: {
+            referenceId: 'branch-american-corner',
+            street: 'Katernberger Str.',
+            area: '7-9',
+            postalCode: '45327',
+            city: 'Essen',
+          },
         },
       ],
     });
