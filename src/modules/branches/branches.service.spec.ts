@@ -855,12 +855,114 @@ describe('BranchesService', () => {
           lastName: 'Kanth',
           phone: '01762419181',
         },
+        branchId: 'branch-1',
       },
       expect.any(Object),
     );
   });
 
-  it('allows business admin to update branch details when branch admin payload is present but no manager is assigned', async () => {
+  it('creates and links a missing branch admin so save then refresh returns the profile', async () => {
+    const { service, repository, usersService, prisma } = makeService();
+    repository.findById
+      .mockResolvedValueOnce({
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        managerId: null,
+        manager: null,
+        users: [],
+        isActive: true,
+        deletedAt: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'branch-1',
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        managerId: 'branch-admin-1',
+        manager: {
+          id: 'branch-admin-1',
+          email: 'americancorner@yopmail.com',
+          role: UserRoleEnum.BRANCH_ADMIN,
+          isActive: true,
+          profile: {
+            firstName: 'Rames',
+            lastName: 'Kanth',
+            phone: '1234567898',
+          },
+        },
+        users: [],
+        settings: null,
+        isActive: true,
+        deletedAt: null,
+      });
+    repository.update.mockResolvedValue({
+      id: 'branch-1',
+      name: 'American Corner',
+    });
+    repository.listBranchAddresses.mockResolvedValue([]);
+    usersService.findByEmail.mockResolvedValue(null);
+    usersService.create.mockResolvedValue({
+      id: 'branch-admin-1',
+      email: 'americancorner@yopmail.com',
+    });
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
+    );
+
+    const actor = {
+      uid: 'business-admin-1',
+      tid: 'tenant-1',
+      rid: 'restaurant-1',
+      role: UserRoleEnum.BUSINESS_ADMIN,
+    };
+    const result = await service.update(actor, 'branch-1', {
+      name: 'American Corner',
+      branchAdmin: {
+        email: 'americancorner@yopmail.com',
+        firstName: 'Rames',
+        lastName: 'Kanth',
+        phone: '1234567898',
+        password: '',
+      },
+    });
+    const refreshed = await service.details(actor, 'branch-1');
+
+    expect(usersService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'americancorner@yopmail.com',
+        role: UserRoleEnum.BRANCH_ADMIN,
+        tenantId: 'tenant-1',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        password: expect.any(String) as string,
+        profile: {
+          firstName: 'Rames',
+          lastName: 'Kanth',
+          phone: '1234567898',
+        },
+      }),
+      expect.any(Object),
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      { manager: { connect: { id: 'branch-admin-1' } } },
+      expect.any(Object),
+    );
+    expect(refreshed.data).toEqual(
+      expect.objectContaining({
+        branchAdmin: {
+          id: 'branch-admin-1',
+          email: 'americancorner@yopmail.com',
+          firstName: 'Rames',
+          lastName: 'Kanth',
+          phone: '1234567898',
+        },
+      }),
+    );
+    expect(result.message).toBe('Branch updated successfully');
+  });
+
+  it('safely relinks an unassigned legacy branch admin by scoped email', async () => {
     const { service, repository, usersService, prisma } = makeService();
     repository.findById.mockResolvedValue({
       id: 'branch-1',
@@ -868,18 +970,28 @@ describe('BranchesService', () => {
       restaurantId: 'restaurant-1',
       managerId: null,
       manager: null,
+      users: [],
       isActive: true,
       deletedAt: null,
     });
-    repository.update.mockResolvedValue({
-      id: 'branch-1',
-      name: 'American Corner',
+    repository.update.mockResolvedValue({ id: 'branch-1' });
+    usersService.findByEmail.mockResolvedValue({
+      id: 'legacy-admin-1',
+      email: 'legacy@example.com',
+      role: UserRoleEnum.BRANCH_ADMIN,
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      branchId: null,
+      isActive: true,
+      deletedAt: null,
+      profile: { firstName: 'Old', lastName: 'Name', phone: '100' },
     });
+    usersService.update.mockResolvedValue({ id: 'legacy-admin-1' });
     prisma.$transaction.mockImplementation(
       async (callback: (tx: unknown) => Promise<unknown>) => callback({}),
     );
 
-    const result = await service.update(
+    await service.update(
       {
         uid: 'business-admin-1',
         tid: 'tenant-1',
@@ -887,23 +999,35 @@ describe('BranchesService', () => {
       },
       'branch-1',
       {
-        name: 'American Corner',
         branchAdmin: {
-          email: 'americancorner@yopmail.com',
-          firstName: 'Rames',
-          lastName: 'Kanth',
-          phone: '1234567898',
+          email: 'legacy@example.com',
+          firstName: 'Legacy',
+          lastName: 'Owner',
+          phone: '200',
+          password: '   ',
         },
       },
     );
 
-    expect(repository.update).toHaveBeenCalledWith(
-      'branch-1',
-      expect.objectContaining({ name: 'American Corner' }),
+    expect(usersService.create).not.toHaveBeenCalled();
+    expect(usersService.update).toHaveBeenCalledWith(
+      'legacy-admin-1',
+      expect.objectContaining({
+        password: undefined,
+        branchId: 'branch-1',
+        profile: {
+          firstName: 'Legacy',
+          lastName: 'Owner',
+          phone: '200',
+        },
+      }),
       expect.any(Object),
     );
-    expect(usersService.update).not.toHaveBeenCalled();
-    expect(result.message).toBe('Branch updated successfully');
+    expect(repository.update).toHaveBeenCalledWith(
+      'branch-1',
+      { manager: { connect: { id: 'legacy-admin-1' } } },
+      expect.any(Object),
+    );
   });
 
   it('blocks branch admin from updating another branch details', async () => {

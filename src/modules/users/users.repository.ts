@@ -20,8 +20,8 @@ export class UsersRepository {
     return this.client(tx).user.update({ where: { id }, data });
   }
 
-  async findByEmail(email: string, restaurantId?: string) {
-    return this.prisma.user.findFirst({
+  async findByEmail(email: string, restaurantId?: string, tx?: PrismaTx) {
+    return this.client(tx).user.findFirst({
       where: {
         email,
         deletedAt: null,

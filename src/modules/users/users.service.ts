@@ -133,8 +133,8 @@ export class UsersService {
     );
   }
 
-  async findByEmail(email: string, restaurantId?: string) {
-    return this.usersRepository.findByEmail(email, restaurantId);
+  async findByEmail(email: string, restaurantId?: string, tx?: PrismaTx) {
+    return this.usersRepository.findByEmail(email, restaurantId, tx);
   }
 
   async findByEmailIncludingDeleted(email: string, restaurantId?: string) {

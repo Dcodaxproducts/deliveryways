@@ -3,7 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { Branch, Prisma, StaffAccountType } from '@prisma/client';
+import { Branch, Prisma, StaffAccountType, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AuthUserContext } from '../../common/decorators';
@@ -1858,18 +1858,77 @@ export class BranchesService {
       return;
     }
 
-    const assignedAdmin = branch.manager ?? branch.users?.[0] ?? null;
-    const managerId = assignedAdmin?.id ?? branch.managerId;
-    if (!managerId) {
+    const email = branchAdmin.email?.trim().toLowerCase();
+    let assignedAdmin = branch.manager ?? branch.users?.[0] ?? null;
+
+    if (!assignedAdmin && email) {
+      const legacyAdmin = await this.usersService.findByEmail(
+        email,
+        branch.restaurantId,
+        tx,
+      );
+
+      if (legacyAdmin) {
+        const canRelink =
+          legacyAdmin.role === UserRole.BRANCH_ADMIN &&
+          legacyAdmin.tenantId === branch.tenantId &&
+          legacyAdmin.isActive &&
+          !legacyAdmin.deletedAt &&
+          (!legacyAdmin.branchId || legacyAdmin.branchId === branch.id);
+
+        if (!canRelink) {
+          throw new BadRequestException(
+            'Branch admin already exists for this restaurant',
+          );
+        }
+
+        assignedAdmin = legacyAdmin;
+      }
+    }
+
+    if (!assignedAdmin) {
+      if (!email || !branchAdmin.firstName || !branchAdmin.lastName) {
+        throw new BadRequestException(
+          'Email, first name and last name are required to create a branch admin',
+        );
+      }
+
+      const plainPassword =
+        branchAdmin.password?.trim() || this.generateBranchAdminPassword();
+      assignedAdmin = await this.usersService.create(
+        {
+          email,
+          password: await bcrypt.hash(plainPassword, 10),
+          role: UserRoleEnum.BRANCH_ADMIN,
+          tenantId: branch.tenantId,
+          restaurantId: branch.restaurantId,
+          branchId: branch.id,
+          isVerified: true,
+          isApproved: true,
+          profile: {
+            firstName: branchAdmin.firstName,
+            lastName: branchAdmin.lastName,
+            phone: branchAdmin.phone,
+          },
+        },
+        tx,
+      );
+
+      await this.branchesRepository.update(
+        branch.id,
+        { manager: { connect: { id: assignedAdmin.id } } },
+        tx,
+      );
       return;
     }
 
-    const email = branchAdmin.email?.trim().toLowerCase();
+    const managerId = assignedAdmin.id;
 
-    if (email && email !== assignedAdmin?.email) {
+    if (email && email !== assignedAdmin.email) {
       const existingBranchAdmin = await this.usersService.findByEmail(
         email,
         branch.restaurantId,
+        tx,
       );
 
       if (existingBranchAdmin && existingBranchAdmin.id !== managerId) {
@@ -1883,23 +1942,30 @@ export class BranchesService {
       managerId,
       {
         email: email || undefined,
-        password: branchAdmin.password
+        password: branchAdmin.password?.trim()
           ? await bcrypt.hash(branchAdmin.password, 10)
           : undefined,
         profile: this.hasBranchAdminProfileUpdatePayload(dto)
           ? {
               firstName:
-                branchAdmin.firstName ??
-                assignedAdmin?.profile?.firstName ??
-                '',
+                branchAdmin.firstName ?? assignedAdmin.profile?.firstName ?? '',
               lastName:
-                branchAdmin.lastName ?? assignedAdmin?.profile?.lastName ?? '',
-              phone: branchAdmin.phone ?? assignedAdmin?.profile?.phone ?? '',
+                branchAdmin.lastName ?? assignedAdmin.profile?.lastName ?? '',
+              phone: branchAdmin.phone ?? assignedAdmin.profile?.phone ?? '',
             }
           : undefined,
+        branchId: branch.id,
       },
       tx,
     );
+
+    if (branch.managerId !== managerId) {
+      await this.branchesRepository.update(
+        branch.id,
+        { manager: { connect: { id: managerId } } },
+        tx,
+      );
+    }
   }
 
   private hasBranchAdminUpdatePayload(dto: UpdateBranchDto) {
