@@ -32,19 +32,25 @@ export class WinOrderStatusService {
     duplicatePassword: string | undefined,
     dto: WinOrderTrackingStatusDto,
   ) {
-    if (!duplicateUsername || !duplicatePassword) {
+    if (Boolean(duplicateUsername) !== Boolean(duplicatePassword)) {
       throw new UnauthorizedException('Invalid integration credentials');
     }
-    const duplicateAuth = await this.connections.authenticate(
-      duplicateUsername,
-      duplicatePassword,
-    );
-    if (duplicateAuth.connectionId !== machine.connectionId) {
-      throw new UnauthorizedException('Invalid integration credentials');
+    if (duplicateUsername && duplicatePassword) {
+      const duplicateAuth = await this.connections.authenticate(
+        duplicateUsername,
+        duplicatePassword,
+      );
+      if (duplicateAuth.connectionId !== machine.connectionId) {
+        throw new UnauthorizedException('Invalid integration credentials');
+      }
     }
 
     const fingerprint = this.fingerprint(dto);
-    if (await this.repository.findEvent(machine, fingerprint)) {
+    const existingEvent = await this.repository.findEvent(machine, fingerprint);
+    if (
+      existingEvent &&
+      existingEvent.result !== WinOrderStatusEventResult.FAILED
+    ) {
       return { success: true };
     }
     const orderExport = await this.repository.findExport(machine, dto.ordersid);

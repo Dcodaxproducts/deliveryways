@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import {
   OrderStatus,
   OrderType,
@@ -20,7 +19,7 @@ describe('OrdersIntegrationService', () => {
     const repository = {
       findIntegrationExportCandidates: jest.fn(),
       findIntegrationOrder: jest.fn(),
-      updateIntegrationStatus: jest.fn(),
+      updateIntegrationStatus: jest.fn().mockResolvedValue({ count: 1 }),
       updateIntegrationEstimate: jest.fn(),
     };
     const notifications = { notifyOrderStatusChanged: jest.fn() };
@@ -181,6 +180,7 @@ describe('OrdersIntegrationService', () => {
       1,
       'order-1',
       expect.objectContaining(scope),
+      OrderStatus.PLACED,
       OrderStatus.CONFIRMED,
       expect.any(Date),
     );
@@ -188,6 +188,7 @@ describe('OrdersIntegrationService', () => {
       2,
       'order-1',
       expect.objectContaining(scope),
+      OrderStatus.CONFIRMED,
       OrderStatus.PREPARING,
       undefined,
     );
@@ -195,6 +196,7 @@ describe('OrdersIntegrationService', () => {
       3,
       'order-1',
       expect.objectContaining(scope),
+      OrderStatus.PREPARING,
       OrderStatus.OUT_FOR_DELIVERY,
       undefined,
     );
@@ -213,8 +215,8 @@ describe('OrdersIntegrationService', () => {
     expect(realtime.emitTrackingUpdate).toHaveBeenCalledWith({ id: 'order-1' });
   });
 
-  it('rejects backward status changes', async () => {
-    const { service, repository } = makeService();
+  it('ignores an out-of-order callback without regressing the order', async () => {
+    const { service, repository, notifications, realtime } = makeService();
     repository.findIntegrationOrder.mockResolvedValue({
       id: 'order-1',
       orderType: OrderType.DELIVERY,
@@ -222,12 +224,50 @@ describe('OrdersIntegrationService', () => {
       orderTime: new Date(),
     });
 
-    await expect(
-      service.applyStatus({
-        ...scope,
-        orderId: 'order-1',
-        status: 'PREPARING',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await service.applyStatus({
+      ...scope,
+      orderId: 'order-1',
+      status: 'PREPARING',
+      estimatedPreparationMinutes: 30,
+    });
+
+    expect(repository.updateIntegrationStatus).not.toHaveBeenCalled();
+    expect(repository.updateIntegrationEstimate).not.toHaveBeenCalled();
+    expect(notifications.notifyOrderStatusChanged).not.toHaveBeenCalled();
+    expect(realtime.emitTrackingUpdate).not.toHaveBeenCalled();
+  });
+
+  it('re-reads after a concurrent transition and only advances from current state', async () => {
+    const { service, repository } = makeService();
+    repository.findIntegrationOrder
+      .mockResolvedValueOnce({
+        id: 'order-1',
+        orderType: OrderType.DELIVERY,
+        status: OrderStatus.PLACED,
+        orderTime: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'order-1',
+        orderType: OrderType.DELIVERY,
+        status: OrderStatus.PREPARING,
+        orderTime: new Date('2026-11-26T06:00:00.000Z'),
+      });
+    repository.updateIntegrationStatus
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+
+    await service.applyStatus({
+      ...scope,
+      orderId: 'order-1',
+      status: 'OUT_FOR_DELIVERY',
+    });
+
+    expect(repository.updateIntegrationStatus).toHaveBeenLastCalledWith(
+      'order-1',
+      expect.objectContaining(scope),
+      OrderStatus.PREPARING,
+      OrderStatus.OUT_FOR_DELIVERY,
+      undefined,
+    );
   });
 });

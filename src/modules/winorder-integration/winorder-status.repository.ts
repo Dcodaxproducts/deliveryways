@@ -47,22 +47,40 @@ export class WinOrderStatusRepository {
     result: WinOrderStatusEventResult;
     errorMessage?: string;
   }) {
-    await this.prisma.winOrderStatusEvent.create({
-      data: {
+    const event = {
+      exportId: input.exportId,
+      orderId: input.orderId,
+      trackingStatus: input.trackingStatus,
+      message: input.message,
+      deliverMinutes: input.deliverMinutes,
+      deliverEta: input.deliverEta,
+      rejectReason: input.rejectReason,
+      rawPayload: input.rawPayload,
+      result: input.result,
+      errorMessage: input.errorMessage,
+      processedAt: new Date(),
+    };
+    const replayed = await this.prisma.winOrderStatusEvent.updateMany({
+      where: {
         ...this.scope(input.machine),
         connectionId: input.machine.connectionId,
-        exportId: input.exportId,
-        orderId: input.orderId,
         fingerprint: input.fingerprint,
-        trackingStatus: input.trackingStatus,
-        message: input.message,
-        deliverMinutes: input.deliverMinutes,
-        deliverEta: input.deliverEta,
-        rejectReason: input.rejectReason,
-        rawPayload: input.rawPayload,
-        result: input.result,
-        errorMessage: input.errorMessage,
+        result: WinOrderStatusEventResult.FAILED,
       },
+      data: event,
+    });
+    if (replayed.count === 1) return;
+
+    await this.prisma.winOrderStatusEvent.createMany({
+      data: [
+        {
+          ...this.scope(input.machine),
+          connectionId: input.machine.connectionId,
+          fingerprint: input.fingerprint,
+          ...event,
+        },
+      ],
+      skipDuplicates: true,
     });
   }
 

@@ -85,6 +85,7 @@ const WALLET_PAYOUT_ORDER_BATCH_SIZE = 500;
 const WALLET_PAYOUT_ORDER_MAX_BATCHES = 100;
 const WALLET_PAYOUT_TRANSACTION_MAX_PER_ORDER = 100;
 const WALLET_PAYOUT_INVOICE_MAX = 10_000;
+const PAYOUT_RENDER_ORDER_TIMESTAMP_BATCH_SIZE = 500;
 
 interface MonthlyBillingHistory {
   commissionDeductedAmount: Prisma.Decimal;
@@ -2446,6 +2447,7 @@ export class PackagePlansService {
       orderType: order.orderType,
       paymentMethod: order.paymentMethod,
       paidAt: order.paidAt,
+      occurredAt: this.resolvePayoutOrderOccurredAt(order),
       grossAmount,
       platformCommissionAmount,
       restaurantPayoutAmount,
@@ -3886,7 +3888,7 @@ export class PackagePlansService {
           rows: invoice.lineItems.map((item) => [
             item.orderId,
             this.formatInvoiceDateTime(
-              item.paidAt,
+              item.occurredAt,
               invoice.restaurant.timezone,
             ),
             this.formatInvoiceLabel(item.paymentMethod ?? 'N/A'),
@@ -4273,6 +4275,9 @@ export class PackagePlansService {
         'Mailer service is not configured',
       );
     }
+    const renderInvoice = invoice.lineItems.some((item) => !item.occurredAt)
+      ? await this.enrichStoredPayoutInvoiceForRendering(invoice)
+      : invoice;
     if (
       typeof this.packagePlansRepository.claimPayoutInvoiceEmail !== 'function'
     ) {
@@ -4284,7 +4289,7 @@ export class PackagePlansService {
           attachments: [
             {
               filename: `${invoice.invoiceNumber}.pdf`,
-              content: this.generateWeeklyPayoutInvoicePdf(invoice),
+              content: this.generateWeeklyPayoutInvoicePdf(renderInvoice),
               contentType: 'application/pdf',
             },
           ],
@@ -4304,7 +4309,7 @@ export class PackagePlansService {
 
     try {
       fileName = `${invoice.invoiceNumber}.pdf`;
-      content = this.generateWeeklyPayoutInvoicePdf(invoice);
+      content = this.generateWeeklyPayoutInvoicePdf(renderInvoice);
     } catch (error) {
       await this.packagePlansRepository.markPayoutInvoiceEmailFailed({
         outboxId: claimed.id,
@@ -5057,6 +5062,9 @@ export class PackagePlansService {
       lineItems: invoice.lineItems.map((item) => ({
         ...item,
         paidAt: item.paidAt ? this.parseStoredInvoiceDate(item.paidAt) : null,
+        occurredAt: item.occurredAt
+          ? this.parseStoredInvoiceDate(item.occurredAt)
+          : null,
       })),
     };
   }
@@ -5074,23 +5082,50 @@ export class PackagePlansService {
           .filter((id): id is string => Boolean(id)),
       ),
     ].slice(0, 500);
-    const [displayScope, platformLegalAddress] = await Promise.all([
-      tenantId &&
-      typeof this.packagePlansRepository.findPayoutInvoiceDisplayScope ===
-        'function'
-        ? this.packagePlansRepository.findPayoutInvoiceDisplayScope(
-            invoice.restaurant.id,
-            tenantId,
-            branchIds,
-          )
-        : Promise.resolve(null),
-      invoice.platformLegalAddress
-        ? Promise.resolve(invoice.platformLegalAddress)
-        : this.resolveDeliveryWayLegalAddress(),
-    ]);
+    const orderIds = [
+      ...new Set(
+        invoice.lineItems
+          .filter((item) => !item.occurredAt)
+          .map((item) => item.orderId),
+      ),
+    ];
+    const [displayScope, platformLegalAddress, orderTimestamps] =
+      await Promise.all([
+        tenantId &&
+        typeof this.packagePlansRepository.findPayoutInvoiceDisplayScope ===
+          'function'
+          ? this.packagePlansRepository.findPayoutInvoiceDisplayScope(
+              invoice.restaurant.id,
+              tenantId,
+              branchIds,
+            )
+          : Promise.resolve(null),
+        invoice.platformLegalAddress
+          ? Promise.resolve(invoice.platformLegalAddress)
+          : this.resolveDeliveryWayLegalAddress(),
+        this.findPayoutInvoiceOrderTimestamps(
+          invoice.restaurant.id,
+          tenantId,
+          orderIds,
+        ),
+      ]);
+    const orderTimestampsById = new Map(
+      orderTimestamps.map((order) => [order.id, order]),
+    );
 
     if (!displayScope) {
-      return { ...invoice, platformLegalAddress };
+      return {
+        ...invoice,
+        platformLegalAddress,
+        lineItems: invoice.lineItems.map((item) => ({
+          ...item,
+          occurredAt:
+            item.occurredAt ??
+            this.resolvePayoutOrderOccurredAt(
+              orderTimestampsById.get(item.orderId),
+            ),
+        })),
+      };
     }
 
     const branchesById = new Map(
@@ -5115,13 +5150,19 @@ export class PackagePlansService {
         address: currentRestaurantAddress,
       },
       lineItems: invoice.lineItems.map((item) => {
+        const occurredAt =
+          item.occurredAt ??
+          this.resolvePayoutOrderOccurredAt(
+            orderTimestampsById.get(item.orderId),
+          );
         const currentBranch = item.branch
           ? branchesById.get(item.branch.id)
           : undefined;
-        if (!item.branch || !currentBranch) return item;
+        if (!item.branch || !currentBranch) return { ...item, occurredAt };
 
         return {
           ...item,
+          occurredAt,
           branch: {
             ...item.branch,
             name: currentBranch.name,
@@ -5138,6 +5179,60 @@ export class PackagePlansService {
         };
       }),
     };
+  }
+
+  private async findPayoutInvoiceOrderTimestamps(
+    restaurantId: string,
+    tenantId: string | undefined,
+    orderIds: string[],
+  ) {
+    if (
+      !tenantId ||
+      typeof this.packagePlansRepository.findPayoutInvoiceOrderTimestamps !==
+        'function'
+    ) {
+      return [];
+    }
+
+    const timestamps: Awaited<
+      ReturnType<PackagePlansRepository['findPayoutInvoiceOrderTimestamps']>
+    > = [];
+    for (
+      let offset = 0;
+      offset < orderIds.length;
+      offset += PAYOUT_RENDER_ORDER_TIMESTAMP_BATCH_SIZE
+    ) {
+      timestamps.push(
+        ...(await this.packagePlansRepository.findPayoutInvoiceOrderTimestamps(
+          restaurantId,
+          tenantId,
+          orderIds.slice(
+            offset,
+            offset + PAYOUT_RENDER_ORDER_TIMESTAMP_BATCH_SIZE,
+          ),
+        )),
+      );
+    }
+    return timestamps;
+  }
+
+  private resolvePayoutOrderOccurredAt(
+    order:
+      | {
+          paidAt: Date | null;
+          deliveredAt: Date | null;
+          orderTime: Date | null;
+          createdAt: Date;
+        }
+      | undefined,
+  ): Date | null {
+    return (
+      order?.paidAt ??
+      order?.deliveredAt ??
+      order?.orderTime ??
+      order?.createdAt ??
+      null
+    );
   }
 
   private formatCommissionSummary(

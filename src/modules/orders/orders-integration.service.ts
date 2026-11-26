@@ -1,5 +1,5 @@
 import {
-  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -103,36 +103,70 @@ export class OrdersIntegrationService implements OrdersIntegrationPort {
       throw new NotFoundException('Order not found in integration scope');
     }
 
-    const path = this.resolveTransitionPath(
-      order.orderType,
-      order.status,
-      input.status,
-    );
+    const targetStatus =
+      input.status === 'COMPLETED'
+        ? this.lifecycleFor(order.orderType).at(-1)
+        : (input.status as OrderStatus);
+    let current = order;
+    let finalStatus: OrderStatus | null = null;
 
-    if (path.length === 0 && order.status !== input.status) {
-      throw new BadRequestException(
-        'Invalid integration order status transition',
-      );
-    }
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const nextStatus = this.resolveTransitionPath(
+        current.orderType,
+        current.status,
+        input.status,
+      )[0];
+      if (!nextStatus) break;
 
-    for (const status of path) {
-      await this.ordersRepository.updateIntegrationStatus(
-        order.id,
+      const orderTime =
+        nextStatus === OrderStatus.CONFIRMED
+          ? (current.orderTime ?? new Date())
+          : undefined;
+      const updated = await this.ordersRepository.updateIntegrationStatus(
+        current.id,
         input,
-        status,
-        status === OrderStatus.CONFIRMED
-          ? (order.orderTime ?? new Date())
-          : undefined,
+        current.status,
+        nextStatus,
+        orderTime,
       );
+      if (updated.count === 1) {
+        current = {
+          ...current,
+          status: nextStatus,
+          orderTime: orderTime ?? current.orderTime,
+        };
+        finalStatus = nextStatus;
+        continue;
+      }
+
+      const refreshed = await this.ordersRepository.findIntegrationOrder(
+        input.orderId,
+        input,
+      );
+      if (!refreshed) {
+        throw new NotFoundException('Order not found in integration scope');
+      }
+      current = refreshed;
     }
 
-    await this.ordersRepository.updateIntegrationEstimate(order.id, input, {
-      estimatedPreparationMinutes: input.estimatedPreparationMinutes,
-      estimatedCompletionAt: input.estimatedCompletionAt,
-    });
+    if (
+      this.resolveTransitionPath(
+        current.orderType,
+        current.status,
+        input.status,
+      ).length > 0
+    ) {
+      throw new ConflictException('Order status changed concurrently');
+    }
 
-    if (path.length > 0) {
-      const finalStatus = path[path.length - 1];
+    if (current.status === targetStatus) {
+      await this.ordersRepository.updateIntegrationEstimate(order.id, input, {
+        estimatedPreparationMinutes: input.estimatedPreparationMinutes,
+        estimatedCompletionAt: input.estimatedCompletionAt,
+      });
+    }
+
+    if (finalStatus) {
       await this.notificationsService.notifyOrderStatusChanged(order.id);
       await this.chatService.syncDeliveryThreadForOrderLifecycle(
         order.id,

@@ -498,6 +498,7 @@ describe('OrdersRepository', () => {
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
       },
+      'PLACED' as never,
       'CONFIRMED' as never,
       orderTime,
     );
@@ -512,6 +513,7 @@ describe('OrdersRepository', () => {
         tenantId: 'tenant-1',
         restaurantId: 'restaurant-1',
         branchId: 'branch-1',
+        status: 'PLACED',
       },
       data: {
         status: 'CONFIRMED',

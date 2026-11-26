@@ -683,6 +683,27 @@ export class PackagePlansRepository {
     };
   }
 
+  findPayoutInvoiceOrderTimestamps(
+    restaurantId: string,
+    tenantId: string,
+    orderIds: string[],
+  ) {
+    return this.prisma.order.findMany({
+      where: {
+        id: { in: orderIds },
+        restaurantId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        paidAt: true,
+        deliveredAt: true,
+        orderTime: true,
+        createdAt: true,
+      },
+    });
+  }
+
   listPaidRestaurantOrders(
     restaurantId: string,
     fromDate: Date,
@@ -734,6 +755,8 @@ export class PackagePlansRepository {
         loyaltyDiscountAmount: true,
         totalAmount: true,
         paidAt: true,
+        deliveredAt: true,
+        orderTime: true,
         createdAt: true,
         branch: {
           select: {
@@ -848,6 +871,8 @@ export class PackagePlansRepository {
         loyaltyDiscountAmount: true,
         totalAmount: true,
         paidAt: true,
+        deliveredAt: true,
+        orderTime: true,
         createdAt: true,
         branch: {
           select: {

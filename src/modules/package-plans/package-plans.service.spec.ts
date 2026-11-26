@@ -121,6 +121,8 @@ describe('PackagePlansService', () => {
     loyaltyDiscountAmount: new Prisma.Decimal(0),
     totalAmount: new Prisma.Decimal(1000),
     paidAt: new Date('2026-06-09T10:00:00.000Z'),
+    deliveredAt: null,
+    orderTime: null,
     createdAt: new Date('2026-06-09T09:55:00.000Z'),
     branch: {
       id: 'branch-1',
@@ -1901,6 +1903,13 @@ describe('PackagePlansService', () => {
           paidAt: new Date('2026-11-10T10:00:00.000Z'),
           createdAt: new Date('2026-11-10T09:55:00.000Z'),
         }),
+        makePaidOrder({
+          id: 'legacy-order-2',
+          paidAt: null,
+          deliveredAt: new Date('2026-11-10T11:00:00.000Z'),
+          orderTime: new Date('2026-11-10T10:30:00.000Z'),
+          createdAt: new Date('2026-11-10T10:00:00.000Z'),
+        }),
       ]),
     };
     const globalSettingsService = {
@@ -1955,6 +1964,7 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Paid With');
     expect(pdfText).toContain('Total \\(EUR\\)');
     expect(pdfText).toContain('10.11.2026, 11:00');
+    expect(pdfText).toContain('10.11.2026, 12:00');
     expect(pdfText).toContain('Stripe');
     expect(pdfText).toContain('Mina Owner');
     expect(pdfText).toContain('Katernberger Str. 7-9, 45327 Essen');
@@ -2006,6 +2016,21 @@ describe('PackagePlansService', () => {
     const snapshot = JSON.parse(
       JSON.stringify(legacyAmericanCornerPayoutSnapshot),
     ) as Prisma.JsonValue;
+    const legacyLineItems = (
+      snapshot as unknown as {
+        lineItems: Array<{ orderId: string; paidAt: string | null }>;
+      }
+    ).lineItems;
+    legacyLineItems[0].paidAt = null;
+    const findPayoutInvoiceOrderTimestamps = jest.fn().mockResolvedValue([
+      {
+        id: legacyLineItems[0].orderId,
+        paidAt: null,
+        deliveredAt: new Date('2026-11-10T12:34:00.000Z'),
+        orderTime: new Date('2026-11-10T12:00:00.000Z'),
+        createdAt: new Date('2026-11-10T11:30:00.000Z'),
+      },
+    ]);
     const findPayoutInvoiceDisplayScope = jest.fn().mockResolvedValue({
       id: 'restaurant-american-corner',
       tenantId: 'tenant-american-corner',
@@ -2049,6 +2074,7 @@ describe('PackagePlansService', () => {
         snapshot,
       }),
       findPayoutInvoiceDisplayScope,
+      findPayoutInvoiceOrderTimestamps,
     };
     const globalSettingsService = {
       getSettings: jest.fn().mockResolvedValue({
@@ -2090,6 +2116,7 @@ describe('PackagePlansService', () => {
     );
     expect(pdfText).toContain('Mina Owner');
     expect(pdfText).toContain('DeliveryWay Platz 1, 10115 Berlin, Deutschland');
+    expect(pdfText).toContain('10.11.2026, 13:34');
     expect(pdfText).toContain('BT /F1 8.5 Tf 48 766 Td');
     for (const requiredText of [
       'Commission This Payout',
@@ -2127,6 +2154,11 @@ describe('PackagePlansService', () => {
       'restaurant-american-corner',
       'tenant-american-corner',
       ['branch-american-corner'],
+    );
+    expect(findPayoutInvoiceOrderTimestamps).toHaveBeenCalledWith(
+      'restaurant-american-corner',
+      'tenant-american-corner',
+      legacyLineItems.map((item) => item.orderId),
     );
     expect(invoiceRecordsService.recordDownload).toHaveBeenCalledWith(
       'invoice-american-corner',

@@ -141,6 +141,7 @@ export class OrdersRepository {
   async updateIntegrationStatus(
     id: string,
     scope: IntegrationScope,
+    expectedStatus: OrderStatus,
     status: OrderStatus,
     orderTime?: Date,
   ) {
@@ -150,6 +151,7 @@ export class OrdersRepository {
         tenantId: scope.tenantId,
         restaurantId: scope.restaurantId,
         branchId: scope.branchId,
+        status: expectedStatus,
       },
       data: {
         status,
