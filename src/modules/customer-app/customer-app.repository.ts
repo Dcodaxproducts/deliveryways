@@ -781,6 +781,7 @@ export class CustomerAppRepository {
       customDomainVerifiedAt: true,
       logoUrl: true,
       branding: true,
+      updatedAt: true,
       branches: {
         where: { deletedAt: null, isActive: true },
         orderBy: [{ isMain: 'desc' as const }, { createdAt: 'asc' as const }],

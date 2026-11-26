@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Patch,
   Post,
   Query,
@@ -68,6 +69,7 @@ export class CustomerAppController {
 
   @Public()
   @Get('domain-context')
+  @Header('Cache-Control', 'no-store, max-age=0')
   @ApiOperation({
     summary: 'Resolve restaurant context from a subdomain or custom domain',
   })

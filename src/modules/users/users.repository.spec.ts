@@ -271,6 +271,128 @@ describe('UsersRepository', () => {
     });
   });
 
+  it('uses the exact sanitized list predicate for stats and pagination', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-26T12:00:00.000Z'));
+
+    type QueryArgs = {
+      where: Record<string, unknown>;
+      skip?: number;
+      take?: number;
+    };
+    const findMany = jest.fn((args: QueryArgs) => {
+      void args;
+      return Promise.resolve(
+        Array.from({ length: 10 }, (_, index) => ({
+          id: `customer-${index + 1}`,
+        })),
+      );
+    });
+    const count = jest
+      .fn<Promise<number>, [QueryArgs]>()
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(6)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(3);
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    const result = await repository.listCustomers(
+      'tenant-1',
+      {
+        page: 2,
+        limit: 10,
+        search: 'guest@example.com',
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+        restaurantId: 'restaurant-1',
+        branchId: 'branch-1',
+        isGuest: true,
+        isVerified: false,
+        fromDate: '2026-10-01',
+        toDate: '2026-11-26',
+      },
+      true,
+    );
+
+    const listWhere = findMany.mock.calls[0]?.[0].where;
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({ skip: 10, take: 10 });
+    expect(listWhere).toMatchObject({
+      tenantId: 'tenant-1',
+      restaurantId: 'restaurant-1',
+      isVerified: false,
+      createdAt: {
+        gte: new Date('2026-10-01T00:00:00.000Z'),
+        lte: new Date('2026-11-26T23:59:59.999Z'),
+      },
+    });
+    expect(listWhere).not.toHaveProperty('deletedAt');
+    expect(count.mock.calls[0]?.[0].where).toEqual(listWhere);
+    expect(count.mock.calls[1]?.[0].where).toEqual({
+      AND: [listWhere, { isActive: true }],
+    });
+    expect(count.mock.calls[2]?.[0].where).toEqual({
+      AND: [listWhere, { isActive: false }],
+    });
+    expect(count.mock.calls[3]?.[0].where).toEqual({
+      AND: [
+        listWhere,
+        { createdAt: { gte: new Date('2026-10-27T12:00:00.000Z') } },
+      ],
+    });
+    expect(result).toMatchObject({
+      total: 10,
+      stats: {
+        totalCustomers: 10,
+        activeCustomers: 6,
+        inactiveCustomers: 4,
+        newCustomersLast30Days: 3,
+      },
+    });
+
+    jest.useRealTimers();
+  });
+
+  it('keeps active and inactive cards inside an explicit active filter', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest
+      .fn()
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(1);
+    const prisma = {
+      user: { findMany, count },
+      $transaction: jest.fn((operations: Promise<unknown>[]) =>
+        Promise.all(operations),
+      ),
+    };
+    const repository = new UsersRepository(prisma as never);
+
+    const result = await repository.listCustomers('tenant-1', {
+      page: 1,
+      limit: 10,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      isActive: false,
+    });
+
+    expect(result.stats).toMatchObject({
+      totalCustomers: 4,
+      activeCustomers: 0,
+      inactiveCustomers: 4,
+    });
+    expect(count).toHaveBeenNthCalledWith(2, {
+      where: {
+        AND: [expect.objectContaining({ isActive: false }), { isActive: true }],
+      },
+    });
+  });
+
   const makeTransaction = () => {
     const calls: string[] = [];
     const modelMocks = new Map<string, Record<string, jest.Mock>>();

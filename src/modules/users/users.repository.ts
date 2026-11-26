@@ -197,7 +197,14 @@ export class UsersRepository {
         : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [
+      items,
+      total,
+      activeCustomers,
+      inactiveCustomers,
+      newCustomersLast30Days,
+    ] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         where,
         include: this.customerIncludeConfig,
@@ -208,9 +215,27 @@ export class UsersRepository {
         },
       }),
       this.prisma.user.count({ where }),
+      this.prisma.user.count({
+        where: { AND: [where, { isActive: true }] },
+      }),
+      this.prisma.user.count({
+        where: { AND: [where, { isActive: false }] },
+      }),
+      this.prisma.user.count({
+        where: { AND: [where, { createdAt: { gte: thirtyDaysAgo } }] },
+      }),
     ]);
 
-    return { items, total };
+    return {
+      items,
+      total,
+      stats: {
+        totalCustomers: total,
+        activeCustomers,
+        inactiveCustomers,
+        newCustomersLast30Days,
+      },
+    };
   }
 
   private inclusiveDateEnd(value: string): Date {
