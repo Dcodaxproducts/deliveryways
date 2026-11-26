@@ -17,15 +17,30 @@ export const getBrandingFaviconUrl = (branding: unknown): string | null => {
       ? (logos as Record<string, unknown>).faviconUrl
       : null;
 
-  const value = assetRecord.faviconUrl ?? nestedFavicon;
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+  const directFavicon = assetRecord.faviconUrl;
+  if (typeof directFavicon === 'string' && directFavicon.trim()) {
+    return directFavicon.trim();
+  }
+
+  return typeof nestedFavicon === 'string' && nestedFavicon.trim()
+    ? nestedFavicon.trim()
+    : null;
 };
 
 export const createBrandingVersion = (
   restaurantId: string,
   branding: unknown,
+  updatedAt?: Date | string | null,
 ): string =>
   createHash('sha256')
-    .update(JSON.stringify([restaurantId, getBrandingFaviconUrl(branding)]))
+    .update(
+      JSON.stringify([
+        restaurantId,
+        getBrandingFaviconUrl(branding),
+        updatedAt instanceof Date
+          ? updatedAt.toISOString()
+          : (updatedAt ?? null),
+      ]),
+    )
     .digest('hex')
     .slice(0, 16);

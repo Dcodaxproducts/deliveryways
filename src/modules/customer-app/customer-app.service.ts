@@ -387,6 +387,7 @@ export class CustomerAppService {
         brandingVersion: createBrandingVersion(
           restaurant.id,
           restaurant.branding,
+          restaurant.updatedAt,
         ),
         faviconUrl,
       },

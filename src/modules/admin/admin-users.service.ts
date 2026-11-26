@@ -54,7 +54,7 @@ export class AdminUsersService {
       user.role === UserRoleEnum.SUPER_ADMIN && !!scopedQuery.withDeleted;
     const tenantId =
       user.role === UserRoleEnum.SUPER_ADMIN ? undefined : user.tid;
-    const { items, total } = await this.usersService.listCustomers(
+    const { items, total, stats } = await this.usersService.listCustomers(
       tenantId,
       scopedQuery,
       allowWithDeleted,
@@ -65,6 +65,7 @@ export class AdminUsersService {
         this.withDeletionState(this.withCustomerContact(item)),
       ),
       message: 'Customers fetched successfully',
+      stats,
       meta: {
         page: query.page,
         limit: query.limit,
