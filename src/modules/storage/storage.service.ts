@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
@@ -13,7 +14,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { extname } from 'path';
 import { AuthUserContext } from '../../common/decorators';
 import { UserRoleEnum } from '../../common/enums';
@@ -258,6 +259,120 @@ export class StorageService {
           }
         : {}),
     };
+  }
+
+  async createRestaurantFaviconUpload(
+    tenantId: string,
+    restaurantId: string,
+    dto: CreatePresignedUploadUrlDto,
+  ) {
+    const normalizedContentType = dto.contentType.toLowerCase();
+    if (!normalizedContentType.startsWith('image/')) {
+      throw new BadRequestException('Only image uploads are supported');
+    }
+    if (
+      !Number.isInteger(dto.fileSize) ||
+      !dto.fileSize ||
+      dto.fileSize > MAX_UPLOAD_FILE_SIZE_BYTES
+    ) {
+      throw new BadRequestException(
+        `File size must be less than or equal to ${MAX_UPLOAD_FILE_SIZE_MB}MB`,
+      );
+    }
+
+    const config = this.getS3Config();
+    if (!config.bucket || !config.region) {
+      throw new InternalServerErrorException(
+        'S3 bucket configuration is incomplete',
+      );
+    }
+
+    const key = this.buildRestaurantFaviconKey(
+      tenantId,
+      restaurantId,
+      dto.fileName,
+    );
+    const client = this.createS3Client(config);
+    const uploadUrl = await getSignedUrl(
+      client,
+      new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        ContentType: normalizedContentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+      { expiresIn: config.presignedUploadExpirySeconds },
+    );
+
+    return {
+      method: 'PUT',
+      uploadUrl,
+      key,
+      fileUrl: this.buildFileUrl(config.bucket, config.region, key),
+      expiresIn: config.presignedUploadExpirySeconds,
+      headers: { 'Content-Type': normalizedContentType },
+    };
+  }
+
+  async canonicalizeRestaurantFavicon(
+    user: AuthUserContext,
+    tenantId: string,
+    restaurantId: string,
+    fileUrl: string,
+  ): Promise<string> {
+    const normalizedFileUrl = fileUrl.trim();
+    if (!normalizedFileUrl) {
+      return '';
+    }
+
+    const config = this.getS3Config();
+    if (!config.bucket || !config.region) {
+      throw new InternalServerErrorException(
+        'S3 bucket configuration is incomplete',
+      );
+    }
+
+    const sourceKey = this.resolveObjectKey(
+      undefined,
+      normalizedFileUrl,
+      config,
+    );
+    const canonicalPrefix = this.getRestaurantFaviconPrefix(
+      tenantId,
+      restaurantId,
+    );
+    if (sourceKey.startsWith(canonicalPrefix)) {
+      return this.buildFileUrl(config.bucket, config.region, sourceKey);
+    }
+
+    const ownedPrefixes = this.getUserOwnedUploadPrefixes(user);
+    if (!ownedPrefixes.some((prefix) => sourceKey.startsWith(prefix))) {
+      throw new ForbiddenException(
+        'Favicon source is outside your upload scope',
+      );
+    }
+
+    const sourceName = sourceKey.split('/').pop() ?? 'favicon';
+    const digest = createHash('sha256')
+      .update(sourceKey)
+      .digest('hex')
+      .slice(0, 24);
+    const destinationKey = `${canonicalPrefix}${digest}-${this.sanitizeFileName(sourceName)}`;
+    const client = this.createS3Client(config);
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: config.bucket,
+        Key: destinationKey,
+        CopySource: `${config.bucket}/${sourceKey
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`,
+        CacheControl: 'public, max-age=31536000, immutable',
+        MetadataDirective: 'COPY',
+      }),
+    );
+
+    return this.buildFileUrl(config.bucket, config.region, destinationKey);
   }
 
   async uploadImage(
@@ -511,6 +626,47 @@ export class StorageService {
       date,
       `${randomUUID()}-${normalizedBaseName}${extension.toLowerCase()}`,
     ].join('/');
+  }
+
+  private buildRestaurantFaviconKey(
+    tenantId: string,
+    restaurantId: string,
+    fileName: string,
+  ): string {
+    const safeFileName = this.sanitizeFileName(fileName);
+    const extension = extname(safeFileName).toLowerCase();
+    const baseName = safeFileName.slice(
+      0,
+      safeFileName.length - extension.length,
+    );
+    const normalizedBaseName = this.slugify(baseName) || 'favicon';
+    return `${this.getRestaurantFaviconPrefix(tenantId, restaurantId)}${randomUUID()}-${normalizedBaseName}${extension}`;
+  }
+
+  private getRestaurantFaviconPrefix(
+    tenantId: string,
+    restaurantId: string,
+  ): string {
+    return [
+      StorageFolderEnum.UPLOADS,
+      this.slugify(tenantId),
+      this.slugify(restaurantId),
+      'branding',
+      'favicon',
+      '',
+    ].join('/');
+  }
+
+  private getUserOwnedUploadPrefixes(user: AuthUserContext): string[] {
+    const scopedParts = [user.tid, user.rid, user.bid, user.uid]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => this.slugify(value));
+    return [
+      ...new Set([
+        `${StorageFolderEnum.UPLOADS}/${this.slugify(user.uid)}/`,
+        `${StorageFolderEnum.UPLOADS}/${scopedParts.join('/')}/`,
+      ]),
+    ];
   }
 
   private buildFileUrl(bucket: string, region: string, key: string) {

@@ -103,6 +103,76 @@ describe('StorageService', () => {
     ).resolves.toBeNull();
   });
 
+  it('creates favicon uploads in the verified tenant and restaurant scope', async () => {
+    const result = await service.createRestaurantFaviconUpload(
+      'tenant-1',
+      'restaurant-1',
+      {
+        fileName: 'favicon.ico',
+        contentType: 'image/x-icon',
+        fileSize: 512,
+      },
+    );
+
+    expect(result.key).toMatch(
+      new RegExp(
+        '^uploads/tenant-1/restaurant-1/branding/favicon/.*-favicon\\.ico$',
+      ),
+    );
+    expect(result.fileUrl).toContain(result.key);
+  });
+
+  it('migrates only the authenticated owner legacy favicon to a canonical key', async () => {
+    const send = jest.spyOn(S3Client.prototype, 'send');
+    const result = await service.canonicalizeRestaurantFavicon(
+      { uid: 'admin-1', role: UserRoleEnum.BUSINESS_ADMIN },
+      'tenant-1',
+      'restaurant-1',
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/admin-1/2026-11-25/legacy.webp',
+    );
+
+    expect(result).toContain(
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/branding/favicon/',
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects foreign and arbitrary favicon sources', async () => {
+    const user = { uid: 'admin-1', role: UserRoleEnum.BUSINESS_ADMIN };
+    await expect(
+      service.canonicalizeRestaurantFavicon(
+        user,
+        'tenant-1',
+        'restaurant-1',
+        'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/admin-2/2026-11-25/foreign.webp',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.canonicalizeRestaurantFavicon(
+        user,
+        'tenant-1',
+        'restaurant-1',
+        'https://evil.example/favicon.webp',
+      ),
+    ).rejects.toThrow('fileUrl does not belong to configured S3');
+  });
+
+  it('keeps an existing canonical favicon idempotent without copying', async () => {
+    const send = jest.spyOn(S3Client.prototype, 'send');
+    const canonical =
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/branding/favicon/icon.webp';
+
+    await expect(
+      service.canonicalizeRestaurantFavicon(
+        { uid: 'admin-1', role: UserRoleEnum.BUSINESS_ADMIN },
+        'tenant-1',
+        'restaurant-1',
+        canonical,
+      ),
+    ).resolves.toBe(canonical);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('creates signed view URL from stored S3 object key', async () => {
     const result = await service.resolveViewUrl(
       'uploads/tenant-1/restaurant-1/user-1/2026-03-16/burger.png',

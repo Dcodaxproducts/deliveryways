@@ -26,6 +26,7 @@ import {
 } from '../../common/guards';
 import { RestaurantsService } from './restaurants.service';
 import {
+  CreateRestaurantFaviconUploadDto,
   CreateRestaurantCustomerAppFaqDto,
   CreateRestaurantDto,
   UpdateRestaurantCustomerAppFaqDto,
@@ -125,6 +126,19 @@ export class RestaurantsController {
     @Param('id') id: string,
   ) {
     return this.restaurantsService.customDomainStatus(user, id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard, TenantAccessGuard)
+  @Roles(RolesEnum.BUSINESS_ADMIN, RolesEnum.SUPER_ADMIN)
+  @Post(':id/branding/favicon/presigned-upload')
+  @ApiOperation({ summary: 'Create a restaurant-scoped favicon upload URL' })
+  createFaviconUpload(
+    @CurrentUser() user: AuthUserContext,
+    @Param('id') id: string,
+    @Body() dto: CreateRestaurantFaviconUploadDto,
+  ) {
+    return this.restaurantsService.createFaviconUpload(user, id, dto);
   }
 
   @ApiBearerAuth()

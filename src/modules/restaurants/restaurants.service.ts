@@ -21,6 +21,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { StorageService } from '../storage/storage.service';
 import { GlobalSettingsService } from '../global-settings/global-settings.service';
 import {
+  CreateRestaurantFaviconUploadDto,
   CreateRestaurantCustomerAppFaqDto,
   CreateRestaurantDto,
   UpdateRestaurantCustomerAppFaqDto,
@@ -231,6 +232,24 @@ export class RestaurantsService {
     };
   }
 
+  async createFaviconUpload(
+    user: AuthUserContext,
+    id: string,
+    dto: CreateRestaurantFaviconUploadDto,
+  ) {
+    const restaurant = await this.restaurantsRepository.findById(id);
+    if (!restaurant || restaurant.deletedAt) {
+      throw new NotFoundException('Restaurant not found');
+    }
+    await this.ensureRestaurantWriteAccess(user, id, restaurant);
+
+    return this.storageService.createRestaurantFaviconUpload(
+      restaurant.tenantId,
+      restaurant.id,
+      dto,
+    );
+  }
+
   async verifyCustomDomain(user: AuthUserContext, id: string) {
     const restaurant = await this.requireCustomDomainRestaurant(user, id);
     const instructions = await this.customDomainDnsService.verify(
@@ -273,6 +292,10 @@ export class RestaurantsService {
     const customDomainChanged =
       dto.customDomain !== undefined &&
       customDomain !== restaurant.customDomain;
+    const branding =
+      dto.branding !== undefined
+        ? await this.canonicalizeBrandingFavicon(user, restaurant, dto.branding)
+        : undefined;
 
     const data = await this.restaurantsRepository.update(
       id,
@@ -291,7 +314,7 @@ export class RestaurantsService {
         tagline: dto.tagline,
         bio: dto.bio,
         supportContact: dto.supportContact as Prisma.InputJsonValue,
-        branding: dto.branding as Prisma.InputJsonValue,
+        branding: branding as Prisma.InputJsonValue,
         socialMedia: dto.socialMedia as Prisma.InputJsonValue,
         settings:
           dto.settings !== undefined
@@ -1520,6 +1543,39 @@ export class RestaurantsService {
     return this.storageService.resolveMediaUrlsDeep(restaurant);
   }
 
+  private async canonicalizeBrandingFavicon(
+    user: AuthUserContext,
+    restaurant: { id: string; tenantId: string },
+    branding: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const assets = this.asObject(branding.assets);
+    const logos = this.asObject(assets.logos);
+    const candidate =
+      typeof assets.faviconUrl === 'string'
+        ? assets.faviconUrl
+        : typeof logos.faviconUrl === 'string'
+          ? logos.faviconUrl
+          : undefined;
+    if (candidate === undefined) {
+      return branding;
+    }
+
+    const faviconUrl = await this.storageService.canonicalizeRestaurantFavicon(
+      user,
+      restaurant.tenantId,
+      restaurant.id,
+      candidate,
+    );
+    return {
+      ...branding,
+      assets: {
+        ...assets,
+        faviconUrl,
+        logos: { ...logos, faviconUrl },
+      },
+    };
+  }
+
   private normalizeMediaUrl(value: unknown): string | null {
     if (typeof value !== 'string') {
       return null;
@@ -1676,6 +1732,7 @@ export class RestaurantsService {
   private async ensureRestaurantReadAccess(
     user: AuthUserContext,
     restaurantId: string,
+    knownRestaurant?: { tenantId: string; deletedAt?: Date | null },
   ) {
     if (user.role === UserRoleEnum.SUPER_ADMIN) {
       return;
@@ -1709,7 +1766,9 @@ export class RestaurantsService {
       );
     }
 
-    const restaurant = await this.restaurantsRepository.findById(restaurantId);
+    const restaurant =
+      knownRestaurant ??
+      (await this.restaurantsRepository.findById(restaurantId));
 
     if (
       !restaurant ||
@@ -1725,8 +1784,9 @@ export class RestaurantsService {
   private async ensureRestaurantWriteAccess(
     user: AuthUserContext,
     restaurantId: string,
+    knownRestaurant?: { tenantId: string; deletedAt?: Date | null },
   ) {
-    await this.ensureRestaurantReadAccess(user, restaurantId);
+    await this.ensureRestaurantReadAccess(user, restaurantId, knownRestaurant);
   }
 
   private resolveStaffAssignedRestaurantIds(

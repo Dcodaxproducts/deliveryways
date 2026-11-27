@@ -28,6 +28,10 @@ describe('RestaurantsService notification settings', () => {
     getInstructions: jest.Mock;
     verify: jest.Mock;
   };
+  let storageService: {
+    createRestaurantFaviconUpload: jest.Mock;
+    canonicalizeRestaurantFavicon: jest.Mock;
+  };
 
   beforeEach(async () => {
     repository = {
@@ -68,6 +72,15 @@ describe('RestaurantsService notification settings', () => {
               (value: string | null | undefined) => value ?? null,
             ),
             resolveMediaUrlsDeep: jest.fn(<T>(value: T) => value),
+            createRestaurantFaviconUpload: jest.fn(),
+            canonicalizeRestaurantFavicon: jest.fn(
+              (
+                _user: unknown,
+                _tenantId: string,
+                _restaurantId: string,
+                value: string,
+              ) => value,
+            ),
           },
         },
         {
@@ -84,6 +97,7 @@ describe('RestaurantsService notification settings', () => {
     }).compile();
 
     service = moduleRef.get(RestaurantsService);
+    storageService = moduleRef.get(StorageService);
   });
 
   it('generates unique immutable slug and subdomain values from the name', async () => {
@@ -144,6 +158,104 @@ describe('RestaurantsService notification settings', () => {
     ];
     expect(updateData.customDomain).toBe('www.example.com');
     expect(updateData.customDomainVerifiedAt).toBeUndefined();
+  });
+
+  it('creates scoped favicon uploads only after restaurant access is verified', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      deletedAt: null,
+    });
+    storageService.createRestaurantFaviconUpload.mockResolvedValue({
+      key: 'uploads/tenant-1/restaurant-1/branding/favicon/icon.webp',
+    });
+
+    await service.createFaviconUpload(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { fileName: 'icon.webp', contentType: 'image/webp', fileSize: 100 },
+    );
+
+    expect(storageService.createRestaurantFaviconUpload).toHaveBeenCalledWith(
+      'tenant-1',
+      'restaurant-1',
+      expect.objectContaining({ fileName: 'icon.webp' }),
+    );
+  });
+
+  it('denies a business admin favicon upload for another tenant', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-2',
+      tenantId: 'tenant-2',
+      deletedAt: null,
+    });
+
+    await expect(
+      service.createFaviconUpload(
+        {
+          uid: 'business-admin-1',
+          tid: 'tenant-1',
+          role: UserRoleEnum.BUSINESS_ADMIN,
+        } as never,
+        'restaurant-2',
+        { fileName: 'icon.webp', contentType: 'image/webp', fileSize: 100 },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(storageService.createRestaurantFaviconUpload).not.toHaveBeenCalled();
+  });
+
+  it('persists the canonical favicon in both branding paths and supports clear', async () => {
+    repository.findById.mockResolvedValue({
+      id: 'restaurant-1',
+      tenantId: 'tenant-1',
+      customDomain: null,
+      deletedAt: null,
+    });
+    repository.update.mockResolvedValue({ id: 'restaurant-1' });
+    storageService.canonicalizeRestaurantFavicon.mockResolvedValueOnce(
+      'https://deliveryway.example/uploads/tenant-1/restaurant-1/branding/favicon/icon.webp',
+    );
+
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { branding: { assets: { faviconUrl: 'legacy-url' } } },
+    );
+
+    expect(repository.update.mock.calls[0]?.[1]).toMatchObject({
+      branding: {
+        assets: {
+          faviconUrl:
+            'https://deliveryway.example/uploads/tenant-1/restaurant-1/branding/favicon/icon.webp',
+          logos: {
+            faviconUrl:
+              'https://deliveryway.example/uploads/tenant-1/restaurant-1/branding/favicon/icon.webp',
+          },
+        },
+      },
+    });
+
+    storageService.canonicalizeRestaurantFavicon.mockResolvedValueOnce('');
+    await service.update(
+      {
+        uid: 'business-admin-1',
+        tid: 'tenant-1',
+        role: UserRoleEnum.BUSINESS_ADMIN,
+      } as never,
+      'restaurant-1',
+      { branding: { assets: { faviconUrl: '' } } },
+    );
+    expect(repository.update.mock.calls[1]?.[1]).toMatchObject({
+      branding: { assets: { faviconUrl: '', logos: { faviconUrl: '' } } },
+    });
   });
 
   it('clears custom-domain verification when the normalized domain changes', async () => {
