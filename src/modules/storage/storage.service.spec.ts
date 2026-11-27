@@ -444,6 +444,16 @@ describe('StorageService', () => {
       restaurant: {
         logoUrl:
           'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/logo.png',
+        branding: {
+          assets: {
+            faviconUrl:
+              'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.ico',
+            logos: {
+              faviconUrl:
+                'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.ico',
+            },
+          },
+        },
       },
       deal: {
         thumbnailUrl:
@@ -463,10 +473,35 @@ describe('StorageService', () => {
 
     expect(result.profile.avatarUrl).toBe('https://signed-url.example');
     expect(result.restaurant.logoUrl).toBe('https://signed-url.example');
+    expect(result.restaurant.branding.assets.faviconUrl).toBe(
+      'https://signed-url.example',
+    );
+    expect(result.restaurant.branding.assets.logos.faviconUrl).toBe(
+      'https://signed-url.example',
+    );
     expect(result.deal.thumbnailUrl).toBe('https://signed-url.example');
     expect(result.items[0].imageUrl).toBe('https://signed-url.example');
     expect(result.items[1].imageUrl).toBe('https://signed-url.example');
-    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(4);
+    expect(resolveViewUrlSpy).toHaveBeenCalledTimes(5);
+  });
+
+  it('preserves already signed nested favicon URLs', async () => {
+    const signedFaviconUrl =
+      'https://deliveryway.s3.eu-west-2.amazonaws.com/uploads/tenant-1/restaurant-1/favicon.ico?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=existing-signature';
+    const resolveViewUrlSpy = jest.spyOn(service, 'resolveViewUrl');
+
+    const result = await service.resolveMediaUrlsDeep({
+      branding: {
+        assets: {
+          faviconUrl: signedFaviconUrl,
+          logos: { faviconUrl: signedFaviconUrl },
+        },
+      },
+    });
+
+    expect(result.branding.assets.faviconUrl).toBe(signedFaviconUrl);
+    expect(result.branding.assets.logos.faviconUrl).toBe(signedFaviconUrl);
+    expect(resolveViewUrlSpy).not.toHaveBeenCalled();
   });
 
   it('resolves independent media fields concurrently', async () => {

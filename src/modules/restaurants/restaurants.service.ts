@@ -1071,7 +1071,7 @@ export class RestaurantsService {
     supportContact: Prisma.JsonValue | null;
     branding?: Prisma.JsonValue | null;
   }) {
-    return {
+    return this.storageService.resolveMediaUrlsDeep({
       restaurantId: restaurant.id,
       restaurant: {
         id: restaurant.id,
@@ -1115,7 +1115,7 @@ export class RestaurantsService {
           this.readRestaurantCurrency(restaurant.settings),
         branding: this.asObject(restaurant.branding),
       },
-    };
+    });
   }
 
   private readRestaurantCurrency(settings: Prisma.JsonValue | null) {
@@ -1517,11 +1517,7 @@ export class RestaurantsService {
       coverImage?: string | null;
     },
   >(restaurant: T) {
-    return {
-      ...restaurant,
-      logoUrl: await this.resolveMediaUrl(restaurant.logoUrl ?? null),
-      coverImage: await this.resolveMediaUrl(restaurant.coverImage ?? null),
-    };
+    return this.storageService.resolveMediaUrlsDeep(restaurant);
   }
 
   private normalizeMediaUrl(value: unknown): string | null {

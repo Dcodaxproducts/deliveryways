@@ -533,7 +533,7 @@ export class StorageService {
     }
 
     const normalizedValue = value.trim();
-    if (!normalizedValue) {
+    if (!normalizedValue || this.isPresignedUrl(normalizedValue)) {
       return value;
     }
 
@@ -554,8 +554,22 @@ export class StorageService {
       key === 'thumbnailUrl' ||
       key === 'allergenPdfUrl' ||
       key === 'logoUrl' ||
-      key === 'coverImage'
+      key === 'coverImage' ||
+      key === 'faviconUrl'
     );
+  }
+
+  private isPresignedUrl(value: string) {
+    try {
+      const url = new URL(value);
+      return (
+        url.searchParams.has('X-Amz-Signature') ||
+        url.searchParams.has('X-Amz-Credential') ||
+        url.searchParams.has('Signature')
+      );
+    } catch {
+      return false;
+    }
   }
 
   private isPlainObject(value: unknown): value is Record<string, unknown> {
