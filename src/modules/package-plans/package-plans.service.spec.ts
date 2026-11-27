@@ -2012,6 +2012,58 @@ describe('PackagePlansService', () => {
     expect(pdfText).toContain('Platform Commission');
   });
 
+  it('preserves eligible placed paid card orders through snapshot and PDF rendering', async () => {
+    const repository = {
+      findRestaurantPayoutScope: jest.fn().mockResolvedValue({
+        id: 'restaurant-1',
+        tenantId: 'tenant-1',
+        name: 'Pizza House',
+        slug: 'pizza-house',
+        supportContact: { email: 'support@pizza.test' },
+        settings: { billing: { email: 'billing@pizza.test' } },
+        tenant: { id: 'tenant-1', name: 'Tenant One', slug: 'tenant-one' },
+      }),
+      findActiveRestaurantSubscription: jest
+        .fn()
+        .mockResolvedValue(makeSubscription()),
+      listPaidRestaurantOrders: jest.fn().mockResolvedValue([
+        makePaidOrder({
+          id: 'placed-paid-stripe',
+          paymentMethod: PaymentMethod.STRIPE,
+        }),
+        makePaidOrder({
+          id: 'placed-paid-card-on-delivery',
+          paymentMethod: PaymentMethod.CARD_ON_DELIVERY,
+          transactions: [],
+        }),
+      ]),
+    };
+    const service = new PackagePlansService(repository as never);
+    const invoice = await service.getWeeklyPayoutInvoice(superAdmin, {
+      restaurantId: 'restaurant-1',
+      fromDate: '2026-06-04T00:00:00.000Z',
+      toDate: '2026-06-11T00:00:00.000Z',
+    });
+
+    expect(invoice.data.lineItems.map((item) => item.orderId)).toEqual([
+      'placed-paid-stripe',
+      'placed-paid-card-on-delivery',
+    ]);
+    const snapshot = JSON.parse(
+      JSON.stringify(invoice.data),
+    ) as Prisma.JsonValue;
+    expect(JSON.stringify(snapshot)).toContain('placed-paid-stripe');
+    expect(JSON.stringify(snapshot)).toContain('placed-paid-card-on-delivery');
+
+    const pdf = await service.generateStoredInvoicePdf(
+      GeneratedInvoiceKind.WEEKLY_PAYOUT,
+      snapshot,
+    );
+    const pdfText = pdf.toString('utf8');
+    expect(pdfText).toContain('placed-paid-stripe');
+    expect(pdfText).toContain('placed-paid-card-on-delivery');
+  });
+
   it('repairs and enriches the finalized legacy American Corner payout only at render time', async () => {
     const snapshot = JSON.parse(
       JSON.stringify(legacyAmericanCornerPayoutSnapshot),

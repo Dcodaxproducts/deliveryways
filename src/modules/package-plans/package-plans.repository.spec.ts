@@ -5,6 +5,7 @@ import {
   PackageBillingModel,
   PackageCommissionType,
   PackagePayoutCycle,
+  PaymentStatus,
   Prisma,
 } from '@prisma/client';
 import { PackagePlansRepository } from './package-plans.repository';
@@ -294,18 +295,37 @@ describe('PackagePlansRepository commission order recognition', () => {
 
     const findManyArgs = findMany.mock.calls[0]?.[0];
     expect(findManyArgs?.where?.restaurantId).toBe('restaurant-1');
-    const recognizedStatuses = (
-      findManyArgs?.where?.status as { in?: OrderStatus[] } | undefined
-    )?.in;
-    expect(recognizedStatuses).toContain(OrderStatus.CONFIRMED);
-    expect(recognizedStatuses).toContain(OrderStatus.DELIVERED);
-    expect(findManyArgs?.where?.createdAt).toEqual({
-      gte: fromDate,
-      lt: toDate,
-    });
+    const eligibility = findManyArgs?.where?.OR;
+    expect(eligibility).toEqual([
+      {
+        status: {
+          in: [
+            OrderStatus.CONFIRMED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY_FOR_PICKUP,
+            OrderStatus.PICKED_UP,
+            OrderStatus.READY_TO_SERVE,
+            OrderStatus.SERVED,
+            OrderStatus.OUT_FOR_DELIVERY,
+            OrderStatus.DELIVERED,
+          ],
+        },
+        createdAt: { gte: fromDate, lt: toDate },
+      },
+      {
+        status: OrderStatus.PLACED,
+        paymentStatus: PaymentStatus.PAID,
+        paidAt: { gte: fromDate, lt: toDate },
+      },
+    ]);
+    expect(eligibility).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: OrderStatus.CANCELLED }),
+        expect.objectContaining({ status: OrderStatus.REJECTED }),
+        expect.objectContaining({ paymentStatus: PaymentStatus.REFUNDED }),
+      ]),
+    );
     expect(findManyArgs?.orderBy).toEqual([{ createdAt: 'asc' }]);
-    expect(findManyArgs?.where).not.toHaveProperty('paymentStatus');
-    expect(findManyArgs?.where).not.toHaveProperty('paidAt');
   });
 });
 

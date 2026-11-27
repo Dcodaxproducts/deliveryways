@@ -4331,23 +4331,31 @@ export class OrdersService {
     }
 
     if (!guestContact) {
-      throw new BadRequestException(
-        'guestContact is required for guest orders',
-      );
+      throw new BadRequestException({
+        message: 'Guest contact details are required to place this order.',
+        error: 'GUEST_CONTACT_REQUIRED',
+      });
     }
 
     if (guestContact.privacyPolicyAccepted !== true) {
-      throw new BadRequestException(
-        'privacyPolicyAccepted is required for guest orders',
-      );
+      throw new BadRequestException({
+        message: 'Please accept the privacy policy before placing this order.',
+        error: 'GUEST_PRIVACY_ACCEPTANCE_REQUIRED',
+      });
     }
 
     if (!isInternalWalkIn && !guestContact.email?.trim()) {
-      throw new BadRequestException('email is required for guest orders');
+      throw new BadRequestException({
+        message: 'An email address is required to place this guest order.',
+        error: 'GUEST_EMAIL_REQUIRED',
+      });
     }
 
     if (!isInternalWalkIn && !guestContact.phone?.trim()) {
-      throw new BadRequestException('phone is required for guest orders');
+      throw new BadRequestException({
+        message: 'A phone number is required to place this guest order.',
+        error: 'GUEST_PHONE_REQUIRED',
+      });
     }
   }
 

@@ -5830,7 +5830,7 @@ describe('OrdersService - admin customer resolution', () => {
           isGuest: true,
         },
       ),
-    ).toThrow('guestContact is required for guest orders');
+    ).toThrow('Guest contact details are required to place this order.');
   });
 
   it('allows internal staff to place takeaway walk-in orders without contact', () => {
@@ -5921,7 +5921,7 @@ describe('OrdersService - admin customer resolution', () => {
         undefined,
         'DELIVERY',
       ),
-    ).toThrow('guestContact is required for guest orders');
+    ).toThrow('Guest contact details are required to place this order.');
   });
 
   it('requires privacy policy acceptance when guest places an order', () => {
@@ -5956,7 +5956,7 @@ describe('OrdersService - admin customer resolution', () => {
           privacyPolicyAccepted: false,
         },
       ),
-    ).toThrow('privacyPolicyAccepted is required for guest orders');
+    ).toThrow('Please accept the privacy policy before placing this order.');
   });
 
   it('requires email for customer-app guest checkout', () => {
@@ -5989,7 +5989,7 @@ describe('OrdersService - admin customer resolution', () => {
         },
         'TAKEAWAY',
       ),
-    ).toThrow('email is required for guest orders');
+    ).toThrow('An email address is required to place this guest order.');
   });
 
   it('stores guest contact consent metadata with privacy policy link', () => {

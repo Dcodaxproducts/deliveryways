@@ -715,19 +715,17 @@ export class PackagePlansRepository {
         restaurantId,
         ...(recognizeConfirmedOrders
           ? {
-              status: {
-                in: [
-                  OrderStatus.CONFIRMED,
-                  OrderStatus.PREPARING,
-                  OrderStatus.READY_FOR_PICKUP,
-                  OrderStatus.PICKED_UP,
-                  OrderStatus.READY_TO_SERVE,
-                  OrderStatus.SERVED,
-                  OrderStatus.OUT_FOR_DELIVERY,
-                  OrderStatus.DELIVERED,
-                ],
-              },
-              createdAt: { gte: fromDate, lt: toDate },
+              OR: [
+                {
+                  status: { in: SUCCESSFUL_ORDER_STATUSES },
+                  createdAt: { gte: fromDate, lt: toDate },
+                },
+                {
+                  status: OrderStatus.PLACED,
+                  paymentStatus: PaymentStatus.PAID,
+                  paidAt: { gte: fromDate, lt: toDate },
+                },
+              ],
             }
           : {
               paymentStatus: PaymentStatus.PAID,

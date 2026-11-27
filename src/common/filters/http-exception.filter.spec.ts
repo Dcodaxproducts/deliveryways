@@ -141,6 +141,42 @@ describe('GlobalExceptionFilter', () => {
     );
   });
 
+  it('localizes guest-contact errors without exposing DTO field names', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/cart/checkout',
+          headers: { 'accept-language': 'de-DE,de;q=0.9' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new BadRequestException({
+        message: 'Guest contact details are required to place this order.',
+        error: 'GUEST_CONTACT_REQUIRED',
+      }),
+      host as never,
+    );
+
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Bitte geben Sie die Kontaktdaten des Gastes ein, um die Bestellung abzuschließen.',
+        error: expect.objectContaining({
+          code: 'GUEST_CONTACT_REQUIRED',
+          message:
+            'Bitte geben Sie die Kontaktdaten des Gastes ein, um die Bestellung abzuschließen.',
+        }) as unknown,
+      }),
+    );
+    expect(JSON.stringify(json.mock.calls)).not.toContain('guestContact');
+  });
+
   it('never returns an untranslated domain error to German clients', () => {
     const filter = new GlobalExceptionFilter();
     const json = jest.fn();

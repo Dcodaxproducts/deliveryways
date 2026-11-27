@@ -39,6 +39,14 @@ const GERMAN_ERROR_MESSAGES: Record<string, string> = {
     'Der Erstattungsbetrag darf den Belastungsbetrag nicht überschreiten.',
   'Refund amount exceeds remaining refundable amount':
     'Der Erstattungsbetrag übersteigt den noch erstattungsfähigen Betrag.',
+  'Guest contact details are required to place this order.':
+    'Bitte geben Sie die Kontaktdaten des Gastes ein, um die Bestellung abzuschließen.',
+  'Please accept the privacy policy before placing this order.':
+    'Bitte akzeptieren Sie die Datenschutzerklärung, bevor Sie die Bestellung abschließen.',
+  'An email address is required to place this guest order.':
+    'Bitte geben Sie eine E-Mail-Adresse für die Gastbestellung ein.',
+  'A phone number is required to place this guest order.':
+    'Bitte geben Sie eine Telefonnummer für die Gastbestellung ein.',
 };
 
 const GERMAN_STATUS_MESSAGES: Record<number, string> = {
