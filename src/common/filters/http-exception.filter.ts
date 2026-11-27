@@ -8,9 +8,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
+import { resolveApiErrorContract } from './error-contract';
 
 type ValidationErrorDetail = {
   name: string;
+  code: 'FIELD_NOT_ALLOWED' | 'INVALID_ENUM_VALUE' | 'INVALID_FIELD_VALUE';
   message: string;
   allowedValues?: string[];
 };
@@ -47,6 +49,9 @@ const GERMAN_ERROR_MESSAGES: Record<string, string> = {
     'Bitte geben Sie eine E-Mail-Adresse für die Gastbestellung ein.',
   'A phone number is required to place this guest order.':
     'Bitte geben Sie eine Telefonnummer für die Gastbestellung ein.',
+  'Request validation failed':
+    'Die Anfrage enthält ungültige oder nicht unterstützte Felder.',
+  'Required information is missing': 'Erforderliche Angaben fehlen.',
 };
 
 const GERMAN_STATUS_MESSAGES: Record<number, string> = {
@@ -103,6 +108,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
   private mapValidationMessage(rawMessage: string): ValidationErrorDetail {
+    const forbiddenPropertyMatch = rawMessage.match(
+      /^property ([A-Za-z0-9_.[\]-]+) should not exist$/i,
+    );
+    if (forbiddenPropertyMatch) {
+      return {
+        name: forbiddenPropertyMatch[1],
+        code: 'FIELD_NOT_ALLOWED',
+        message: rawMessage,
+      };
+    }
+
     const inFieldMatch = rawMessage.match(/ in ([A-Za-z0-9_.[\]-]+)\s+must\b/i);
     const directFieldMatch = rawMessage.match(
       /^([A-Za-z0-9_.[\]-]+)\s+must\b/i,
@@ -121,6 +137,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       return {
         name,
+        code: 'INVALID_ENUM_VALUE',
         message: `${name} must be one of the following values: ${allowedValues.join(', ')}`,
         allowedValues,
       };
@@ -133,7 +150,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       ? `${name} ${reason}`
       : rawMessage;
 
-    return { name, message };
+    return { name, code: 'INVALID_FIELD_VALUE', message };
   }
 
   private resolveLocale(value: string | string[] | undefined): ErrorLocale {
@@ -300,7 +317,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
             .map((item) => this.mapValidationMessage(item));
 
           if (details.length > 0) {
-            message = details[0].message;
+            message = 'Request validation failed';
             code = 'VALIDATION_ERROR';
           }
         } else if (typeof responseMessage === 'string') {
@@ -318,7 +335,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         }
 
         if (code !== 'VALIDATION_ERROR') {
-          code = (resp.error as string) || code;
+          const responseCode =
+            typeof resp.code === 'string'
+              ? resp.code
+              : typeof resp.error === 'string'
+                ? resp.error
+                : undefined;
+          code = responseCode ?? code;
         }
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
@@ -339,6 +362,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message = 'Too many requests. Please wait before trying again.';
     }
 
+    const contract = resolveApiErrorContract(message, status, code);
+    code = contract.code;
+    const params = contract.params;
+    if (code === 'REQUIRED_FIELD_MISSING') {
+      message = 'Required information is missing';
+    }
+
     const locale = this.resolveLocale(request.headers['accept-language']);
     if (Array.isArray(details)) {
       details = this.localizeValidationDetails(details, locale);
@@ -351,6 +381,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error: {
         code,
         message,
+        params,
         details,
       },
       meta: {

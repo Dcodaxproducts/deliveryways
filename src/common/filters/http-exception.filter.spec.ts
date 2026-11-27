@@ -18,10 +18,121 @@ describe('GlobalExceptionFilter', () => {
 
     expect(result).toEqual({
       name: 'status',
+      code: 'INVALID_ENUM_VALUE',
       message:
         'status must be one of the following values: PLACED, CONFIRMED, DELIVERED',
       allowedValues: ['PLACED', 'CONFIRMED', 'DELIVERED'],
     });
+  });
+
+  it('returns a generic validation message with structured violations', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/admin/menu',
+          headers: { 'accept-language': 'en' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new BadRequestException([
+        'property selectedMenuItems should not exist',
+        'status must be one of the following values: ACTIVE, INACTIVE',
+      ]),
+      host as never,
+    );
+
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Request validation failed',
+        error: expect.objectContaining({
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          details: [
+            {
+              name: 'selectedMenuItems',
+              code: 'FIELD_NOT_ALLOWED',
+              message: 'property selectedMenuItems should not exist',
+            },
+            {
+              name: 'status',
+              code: 'INVALID_ENUM_VALUE',
+              message:
+                'status must be one of the following values: ACTIVE, INACTIVE',
+              allowedValues: ['ACTIVE', 'INACTIVE'],
+            },
+          ],
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('adds stable modifier codes and localization params without changing legacy copy', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/cart/items',
+          headers: { 'accept-language': 'en' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new BadRequestException(
+        'Choose Sauces requires at least 2 modifier selection(s)',
+      ),
+      host as never,
+    );
+
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Choose Sauces requires at least 2 modifier selection(s)',
+        error: expect.objectContaining({
+          code: 'MODIFIER_MIN_SELECTIONS_NOT_MET',
+          params: { groupName: 'Choose Sauces', minSelections: 2 },
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('keeps required field names out of user-facing copy', () => {
+    const filter = new GlobalExceptionFilter();
+    const json = jest.fn();
+    const status = jest.fn().mockReturnValue({ json });
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({ status }),
+        getRequest: () => ({
+          url: '/api/v1/admin/reports',
+          headers: { 'accept-language': 'en' },
+        }),
+      }),
+    };
+
+    filter.catch(
+      new BadRequestException('restaurantId is required'),
+      host as never,
+    );
+
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Required information is missing',
+        error: expect.objectContaining({
+          code: 'REQUIRED_FIELD_MISSING',
+          message: 'Required information is missing',
+          params: { field: 'restaurantId' },
+        }) as unknown,
+      }),
+    );
   });
 
   it('maps throttler responses to a stable 429 envelope', () => {
